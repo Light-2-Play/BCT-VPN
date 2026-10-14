@@ -216,40 +216,6 @@ def assemble_subscription(regular_items, wl_items, count, sub_name):
     
     return b64_sub, json_sub
 
-def save_outputs(lite_pack, plus_pack, output_dir="dist"):
-    os.makedirs(output_dir, exist_ok=True)
-    
-    lite_b64, lite_json = lite_pack
-    plus_b64, plus_json = plus_pack
-    
-    # Base64 подписки (для v2rayNG, Happ, v2rayN)
-    with open(f"{output_dir}/lite.txt", "w", encoding="utf-8") as f:
-        f.write(lite_b64)
-    with open(f"{output_dir}/plus.txt", "w", encoding="utf-8") as f:
-        f.write(plus_b64)
-        
-    # JSON подписки (для sing-box, Nekobox, Hiddify)
-    with open(f"{output_dir}/lite.json", "w", encoding="utf-8") as f:
-        f.write(lite_json)
-    with open(f"{output_dir}/plus.json", "w", encoding="utf-8") as f:
-        f.write(plus_json)
-        
-    print("Файлы lite.txt, plus.txt, lite.json, plus.json успешно сгенерированы!")
-
-if __name__ == "__main__":
-    raw_keys = fetch_all_vless()
-    print(f"Спаршено сырых ключей: {len(raw_keys)}")
-    
-    reg_items, wl_items = filter_and_rank_keys(raw_keys)
-    
-    # Lite: 3 обычных + 3 для белых списков
-    lite_data = assemble_subscription(reg_items, wl_items, count=3, sub_name="BCT VPN (Lite)")
-    
-    # Plus: 6 обычных + 6 для белых списков
-    plus_data = assemble_subscription(reg_items, wl_items, count=6, sub_name="BCT VPN (Plus)")
-    
-    save_outputs(lite_data, plus_data)
-
 def generate_web_dashboard(output_dir="dist"):
     """Создает главную страницу index.html со ссылками на подписки"""
     html_content = """<!DOCTYPE html>
@@ -302,3 +268,38 @@ def generate_web_dashboard(output_dir="dist"):
 </html>"""
     with open(f"{output_dir}/index.html", "w", encoding="utf-8") as f:
         f.write(html_content)
+
+def save_outputs(lite_pack, plus_pack, output_dir="dist"):
+    os.makedirs(output_dir, exist_ok=True)
+    
+    lite_b64, lite_json = lite_pack
+    plus_b64, plus_json = plus_pack
+    
+    # Base64 подписки (для v2rayNG, Happ, v2rayN)
+    with open(f"{output_dir}/lite.txt", "w", encoding="utf-8") as f:
+        f.write(lite_b64)
+    with open(f"{output_dir}/plus.txt", "w", encoding="utf-8") as f:
+        f.write(plus_b64)
+        
+    # JSON подписки (для sing-box, Nekobox, Hiddify)
+    with open(f"{output_dir}/lite.json", "w", encoding="utf-8") as f:
+        f.write(lite_json)
+    with open(f"{output_dir}/plus.json", "w", encoding="utf-8") as f:
+        f.write(plus_json)
+        
+    print("Файлы lite.txt, plus.txt, lite.json, plus.json успешно сгенерированы!")
+
+if __name__ == "__main__":
+    raw_keys = fetch_all_vless()
+    print(f"Спаршено сырых ключей: {len(raw_keys)}")
+    
+    reg_items, wl_items = filter_and_rank_keys(raw_keys)
+    
+    # Lite: 3 обычных + 3 для белых списков
+    lite_data = assemble_subscription(reg_items, wl_items, count=3, sub_name="BCT VPN (Lite)")
+    
+    # Plus: 6 обычных + 6 для белых списков
+    plus_data = assemble_subscription(reg_items, wl_items, count=6, sub_name="BCT VPN (Plus)")
+    
+    save_outputs(lite_data, plus_data)
+    generate_web_dashboard(output_dir)
