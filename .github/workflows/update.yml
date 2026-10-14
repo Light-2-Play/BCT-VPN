@@ -24,9 +24,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Download sing-box core
+      - name: Download sing-box
         run: |
-          # Скачиваем официальный релиз sing-box для реального тестирования ключей
           curl -sLo sing-box.tar.gz https://github.com/SagerNet/sing-box/releases/download/v1.10.7/sing-box-1.10.7-linux-amd64.tar.gz
           tar -xzf sing-box.tar.gz
           mv sing-box-*/sing-box ./sing-box
