@@ -11,9 +11,9 @@ import requests
 # Укажите реальные открытые Telegram-каналы (через /s/) или прямые ссылки на raw-файлы
 SOURCES = [
     # Примеры:
-   https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub3.txt,
-   https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub4.txt,
-   https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt
+   "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub3.txt",
+   "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub4.txt",
+   "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt"
 ]
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
