@@ -4,13 +4,16 @@ import json
 import base64
 import socket
 import time
-from urllib.parse import urlparse, parse_qs, quote, unquote
+from urllib.parse import urlparse, parse_qs, quote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
-# Список источников (Telegram-каналы или raw-ссылки)
+# Укажите реальные открытые Telegram-каналы (через /s/) или прямые ссылки на raw-файлы
 SOURCES = [
-    "https://t.me/s/vpn_channel_example",  # Замените на ваши каналы
+    # Примеры:
+   https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub3.txt,
+   https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub4.txt,
+   https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt
 ]
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
@@ -22,7 +25,9 @@ RU_DOMAINS = (
 
 def fetch_all_vless():
     found = set()
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     
     for url in SOURCES:
         try:
@@ -32,6 +37,8 @@ def fetch_all_vless():
                 for key in matches:
                     clean = key.rstrip(".,;)\"'>")
                     found.add(clean)
+            else:
+                print(f"Источник {url} вернул статус {resp.status_code}")
         except Exception as e:
             print(f"Ошибка загрузки источника {url}: {e}")
             
@@ -92,17 +99,13 @@ def filter_and_rank_keys(raw_keys):
     return regular, whitelist
 
 def format_node_name(item, sub_name, index, is_wl):
-    """Присваивает узлу брендированное название для отображения в списке"""
     tag_type = "RU-Bypass" if is_wl else "Global"
     node_name = f"{sub_name} | #{index:02d} [{tag_type}]"
-    
-    # Заменяем хеш (#) в VLESS ссылке на новое имя
     base_uri = item["uri"].split('#')[0]
     renamed_uri = f"{base_uri}#{quote(node_name)}"
     return renamed_uri, node_name
 
 def convert_to_singbox_outbound(item, tag_name):
-    """Преобразует распарсенный VLESS в формат sing-box outbound"""
     p = item["parsed"]
     q = item["query"]
     
@@ -162,7 +165,6 @@ def convert_to_singbox_outbound(item, tag_name):
     return outbound
 
 def build_singbox_config(outbounds, sub_name):
-    """Собирает полный валидный .json профиль для sing-box / Nekobox"""
     tags = [ob["tag"] for ob in outbounds]
     
     config = {
@@ -172,8 +174,8 @@ def build_singbox_config(outbounds, sub_name):
             {
                 "type": "selector",
                 "tag": f"Auto / Select ({sub_name})",
-                "outbounds": ["urltest"] + tags,
-                "default": "urltest"
+                "outbounds": ["urltest"] + tags if tags else ["direct"],
+                "default": "urltest" if tags else "direct"
             },
             {
                 "type": "urltest",
@@ -207,17 +209,13 @@ def assemble_subscription(regular_items, wl_items, count, sub_name):
         singbox_outbounds.append(convert_to_singbox_outbound(it, tag))
         idx += 1
         
-    # Формируем Base64
     raw_text = "\n".join(uris)
-    b64_sub = base64.b64encode(raw_text.encode("utf-8")).decode("utf-8")
-    
-    # Формируем JSON
+    b64_sub = base64.b64encode(raw_text.encode("utf-8")).decode("utf-8") if uris else ""
     json_sub = build_singbox_config(singbox_outbounds, sub_name)
     
     return b64_sub, json_sub
 
-def generate_web_dashboard(output_dir="dist"):
-    """Создает главную страницу index.html со ссылками на подписки"""
+def generate_web_dashboard(output_dir):
     html_content = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -248,7 +246,7 @@ def generate_web_dashboard(output_dir="dist"):
                 <span class="badge">3 Global + 3 RU-Bypass</span>
             </div>
             <div class="links">
-                <a href="lite.txt">📋 Base64 (v2rayNG / Happ / v2rayN): lite.txt</a>
+                <a href="lite.txt">📋 Base64 (v2rayNG / Happ): lite.txt</a>
                 <a href="lite.json">⚙️ JSON (sing-box / Nekobox): lite.json</a>
             </div>
         </div>
@@ -259,7 +257,7 @@ def generate_web_dashboard(output_dir="dist"):
                 <span class="badge">6 Global + 6 RU-Bypass</span>
             </div>
             <div class="links">
-                <a href="plus.txt">📋 Base64 (v2rayNG / Happ / v2rayN): plus.txt</a>
+                <a href="plus.txt">📋 Base64 (v2rayNG / Happ): plus.txt</a>
                 <a href="plus.json">⚙️ JSON (sing-box / Nekobox): plus.json</a>
             </div>
         </div>
@@ -275,19 +273,19 @@ def save_outputs(lite_pack, plus_pack, output_dir="dist"):
     lite_b64, lite_json = lite_pack
     plus_b64, plus_json = plus_pack
     
-    # Base64 подписки (для v2rayNG, Happ, v2rayN)
     with open(f"{output_dir}/lite.txt", "w", encoding="utf-8") as f:
         f.write(lite_b64)
     with open(f"{output_dir}/plus.txt", "w", encoding="utf-8") as f:
         f.write(plus_b64)
         
-    # JSON подписки (для sing-box, Nekobox, Hiddify)
     with open(f"{output_dir}/lite.json", "w", encoding="utf-8") as f:
         f.write(lite_json)
     with open(f"{output_dir}/plus.json", "w", encoding="utf-8") as f:
         f.write(plus_json)
         
-    print("Файлы lite.txt, plus.txt, lite.json, plus.json успешно сгенерированы!")
+    # Создаем главную веб-страницу
+    generate_web_dashboard(output_dir)
+    print("Файлы lite.txt, plus.txt, lite.json, plus.json и index.html успешно созданы!")
 
 if __name__ == "__main__":
     raw_keys = fetch_all_vless()
@@ -295,11 +293,7 @@ if __name__ == "__main__":
     
     reg_items, wl_items = filter_and_rank_keys(raw_keys)
     
-    # Lite: 3 обычных + 3 для белых списков
     lite_data = assemble_subscription(reg_items, wl_items, count=3, sub_name="BCT VPN (Lite)")
-    
-    # Plus: 6 обычных + 6 для белых списков
     plus_data = assemble_subscription(reg_items, wl_items, count=6, sub_name="BCT VPN (Plus)")
     
-    save_outputs(lite_data, plus_data)
-    generate_web_dashboard(output_dir)
+    save_outputs(lite_data, plus_data, output_dir="dist")
