@@ -249,3 +249,56 @@ if __name__ == "__main__":
     plus_data = assemble_subscription(reg_items, wl_items, count=6, sub_name="BCT VPN (Plus)")
     
     save_outputs(lite_data, plus_data)
+
+def generate_web_dashboard(output_dir="dist"):
+    """Создает главную страницу index.html со ссылками на подписки"""
+    html_content = """<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCT VPN Subscriptions</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .card { background: #1e293b; border-radius: 16px; padding: 32px; max-width: 520px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.3); border: 1px solid #334155; }
+        h1 { margin-top: 0; font-size: 24px; text-align: center; color: #38bdf8; }
+        p { color: #94a3b8; font-size: 14px; text-align: center; }
+        .section { margin-top: 24px; }
+        .section-title { font-weight: 600; font-size: 16px; margin-bottom: 12px; color: #e2e8f0; display: flex; justify-content: space-between; }
+        .links { display: flex; flex-direction: column; gap: 8px; }
+        a { display: block; background: #334155; color: #38bdf8; text-decoration: none; padding: 12px 16px; border-radius: 8px; font-size: 14px; word-break: break-all; transition: background 0.2s; }
+        a:hover { background: #475569; }
+        .badge { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: #0284c7; color: white; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>BCT VPN Subscriptions</h1>
+        <p>Автоматическое обновление каждый час</p>
+
+        <div class="section">
+            <div class="section-title">
+                <span>BCT VPN (Lite)</span>
+                <span class="badge">3 Global + 3 RU-Bypass</span>
+            </div>
+            <div class="links">
+                <a href="lite.txt">📋 Base64 (v2rayNG / Happ / v2rayN): lite.txt</a>
+                <a href="lite.json">⚙️ JSON (sing-box / Nekobox): lite.json</a>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                <span>BCT VPN (Plus)</span>
+                <span class="badge">6 Global + 6 RU-Bypass</span>
+            </div>
+            <div class="links">
+                <a href="plus.txt">📋 Base64 (v2rayNG / Happ / v2rayN): plus.txt</a>
+                <a href="plus.json">⚙️ JSON (sing-box / Nekobox): plus.json</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"""
+    with open(f"{output_dir}/index.html", "w", encoding="utf-8") as f:
+        f.write(html_content)
