@@ -16,8 +16,6 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 1. ОБЫЧНЫЕ СЕРВЕРЫ (GLOBAL)
 GLOBAL_SOURCES = [
     "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/vless.txt",
-    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
     "https://raw.githack.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
     "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless"
 ]
@@ -99,6 +97,9 @@ def fetch_group_keys(sources, is_whitelist_group):
 
     return items
 
+# Маркеры иранских локальных узлов, не работающих извне
+IRAN_MARKERS = (".ir", "irancell", "mci.ir", "mkh.pw", "arvancloud")
+
 def parse_vless(raw_item):
     key_uri = raw_item["uri"]
     is_whitelist = raw_item["is_whitelist"]
@@ -109,6 +110,20 @@ def parse_vless(raw_item):
             return None
 
         query = parse_qs(parsed.query)
+        sni = query.get("sni", [""])[0].lower()
+        host = query.get("host", [""])[0].lower()
+        sec = query.get("security", ["none"])[0].lower()
+        target = sni or host or parsed.hostname.lower()
+
+        # Фильтрация для группы Global
+        if not is_whitelist:
+            # 1. Игнорируем иранские узлы
+            if any(marker in target for marker in IRAN_MARKERS):
+                return None
+
+            # 2. Пропускаем ТОЛЬКО ключи с Reality или TLS (остальное блокируется ТСПУ)
+            if sec not in ["reality", "tls"]:
+                return None
 
         return {
             "uri": key_uri,
