@@ -31,15 +31,23 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add lite.txt plus.txt lite.json plus.json index.html
           
+          # Переключаемся на чистую ветку gh-pages
           git checkout --orphan gh-pages
           git rm -rf .
           
-          # Копируем созданные файлы txt и json
-          cp dist/* .
-          rm -rf dist
+          # Проверяем, создались ли файлы в dist
+          if [ -d "dist" ] && [ "$(ls -A dist)" ]; then
+            cp -r dist/* .
+            rm -rf dist
+          else
+            echo "Внимание: папка dist пуста или не создана!"
+            exit 1
+          fi
           
-          git add lite.txt plus.txt lite.json plus.json
-          git commit -m "Hourly update: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          # Добавляем все файлы, которые были сгенерированы
+          git add -A
+          
+          # Делаем коммит только если есть изменения
+          git commit -m "Hourly update: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" || echo "Нет изменений для коммита"
           git push origin gh-pages --force
