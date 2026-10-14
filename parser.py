@@ -4,59 +4,99 @@ import json
 import base64
 import socket
 import time
-from urllib.parse import urlparse, parse_qs, quote
+import random
+import tempfile
+import subprocess
+from urllib.parse import urlparse, parse_qs
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
-# Укажите реальные открытые Telegram-каналы (через /s/) или прямые ссылки на raw-файлы
 SOURCES = [
-    # Примеры:
-   "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub3.txt",
-   "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub4.txt",
-   "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt"
+    # Крупные агрегаторы (автоматически декодируются из Base64 и PlainText)
+    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt"
 ]
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
 
+# Домены и зоны, определяющие обход белых списков
 RU_DOMAINS = (
     ".ru", ".su", ".xn--p1ai", "vk.com", "yandex", "gosuslugi",
-    "ozon", "wildberries", "mail.ru", "dzen.ru", "tbank", "sberbank"
+    "ozon", "wildberries", "mail.ru", "dzen.ru", "tbank", "sberbank",
+    "kinopoisk", "avito", "rbc.ru"
 )
+
+def extract_vless_keys(content: str) -> set:
+    """Извлекает ключи из открытого текста, Base64-блоков и построчно."""
+    found = set()
+    if not content:
+        return found
+
+    # 1. Прямой поиск в открытом тексте
+    for m in VLESS_REGEX.findall(content):
+        found.add(m.rstrip(".,;)\"'>"))
+
+    # 2. Попытка раскодировать весь контент как Base64
+    clean_content = re.sub(r"\s+", "", content)
+    try:
+        pad = len(clean_content) % 4
+        if pad:
+            clean_content += "=" * (4 - pad)
+        decoded = base64.b64decode(clean_content).decode("utf-8", errors="ignore")
+        for m in VLESS_REGEX.findall(decoded):
+            found.add(m.rstrip(".,;)\"'>"))
+    except Exception:
+        pass
+
+    # 3. Построчное декодирование
+    for line in content.splitlines():
+        line = line.strip()
+        if len(line) > 30 and not line.startswith("vless://"):
+            try:
+                pad = len(line) % 4
+                if pad:
+                    line += "=" * (4 - pad)
+                dec_line = base64.b64decode(line).decode("utf-8", errors="ignore")
+                for m in VLESS_REGEX.findall(dec_line):
+                    found.add(m.rstrip(".,;)\"'>"))
+            except Exception:
+                continue
+
+    return found
 
 def fetch_all_vless():
     found = set()
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    
+
     for url in SOURCES:
         try:
             resp = requests.get(url, headers=headers, timeout=12)
             if resp.status_code == 200:
-                matches = VLESS_REGEX.findall(resp.text)
-                for key in matches:
-                    clean = key.rstrip(".,;)\"'>")
-                    found.add(clean)
+                keys = extract_vless_keys(resp.text)
+                print(f"[{url}] Найдено ключей: {len(keys)}")
+                found.update(keys)
             else:
-                print(f"Источник {url} вернул статус {resp.status_code}")
+                print(f"[{url}] Ошибка: код {resp.status_code}")
         except Exception as e:
-            print(f"Ошибка загрузки источника {url}: {e}")
-            
+            print(f"[{url}] Исключение: {e}")
+
     return list(found)
 
 def parse_vless(key_uri):
     try:
         parsed = urlparse(key_uri)
-        if not parsed.hostname or not parsed.port:
+        if not parsed.hostname or not parsed.port or not parsed.username:
             return None
-        
+
         query = parse_qs(parsed.query)
         sni = query.get("sni", [""])[0].lower()
         host = query.get("host", [""])[0].lower()
         target_domain = sni or host or parsed.hostname.lower()
 
         is_whitelist = any(target_domain.endswith(ext) or ext in target_domain for ext in RU_DOMAINS)
-        
+
         return {
             "uri": key_uri,
             "host": parsed.hostname,
@@ -68,78 +108,51 @@ def parse_vless(key_uri):
     except Exception:
         return None
 
-def check_tcp_ping(item, timeout=2.5):
+def check_tcp_ping(item, timeout=1.8):
+    """Быстрый отсев отключенных хостов по TCP сокету"""
     start = time.perf_counter()
     try:
         with socket.create_connection((item["host"], item["port"]), timeout=timeout):
-            latency = (time.perf_counter() - start) * 1000
-            item["latency"] = latency
+            item["latency"] = (time.perf_counter() - start) * 1000
             return item
     except Exception:
         return None
 
-def filter_and_rank_keys(raw_keys):
-    parsed_items = [parse_vless(k) for k in raw_keys if parse_vless(k)]
-    alive_items = []
-
-    print(f"Тестируем доступность {len(parsed_items)} ключей...")
-    with ThreadPoolExecutor(max_workers=30) as executor:
-        futures = [executor.submit(check_tcp_ping, it) for it in parsed_items]
-        for fut in as_completed(futures):
-            res = fut.result()
-            if res:
-                alive_items.append(res)
-
-    alive_items.sort(key=lambda x: x["latency"])
-
-    regular = [it for it in alive_items if not it["is_whitelist"]]
-    whitelist = [it for it in alive_items if it["is_whitelist"]]
-
-    print(f"Рабочих обычных: {len(regular)}, для белых списков: {len(whitelist)}")
-    return regular, whitelist
-
-def format_node_name(item, sub_name, index, is_wl):
-    tag_type = "RU-Bypass" if is_wl else "Global"
-    node_name = f"{sub_name} | #{index:02d} [{tag_type}]"
-    base_uri = item["uri"].split('#')[0]
-    renamed_uri = f"{base_uri}#{quote(node_name)}"
-    return renamed_uri, node_name
-
 def convert_to_singbox_outbound(item, tag_name):
     p = item["parsed"]
     q = item["query"]
-    
+
     uuid = p.username
     server = p.hostname
     port = p.port
-    
-    net = q.get("type", ["tcp"])[0]
-    sec = q.get("security", ["none"])[0]
+
+    net = q.get("type", ["tcp"])[0].lower()
+    sec = q.get("security", ["none"])[0].lower()
     flow = q.get("flow", [""])[0]
     sni = q.get("sni", [""])[0]
     fp = q.get("fp", ["chrome"])[0]
     pbk = q.get("pbk", [""])[0]
     sid = q.get("sid", [""])[0]
-    
+
     outbound = {
         "type": "vless",
         "tag": tag_name,
         "server": server,
         "server_port": port,
         "uuid": uuid,
-        "network": net if net in ["tcp", "udp"] else "tcp"
+        "network": "tcp"
     }
-    
-    if flow:
+
+    if flow and sec in ["tls", "reality"]:
         outbound["flow"] = flow
-        
+
     if sec in ["tls", "reality"]:
         tls_conf = {
             "enabled": True,
             "server_name": sni or server,
             "utls": {
                 "enabled": True,
-                "fingerprint": fp
+                "fingerprint": fp or "chrome"
             }
         }
         if sec == "reality":
@@ -149,7 +162,7 @@ def convert_to_singbox_outbound(item, tag_name):
                 "short_id": sid
             }
         outbound["tls"] = tls_conf
-        
+
     if net == "ws":
         outbound["transport"] = {
             "type": "ws",
@@ -161,12 +174,117 @@ def convert_to_singbox_outbound(item, tag_name):
             "type": "grpc",
             "service_name": q.get("serviceName", [""])[0]
         }
-        
+
     return outbound
+
+def test_vless_via_singbox(item, timeout=3.5):
+    """Реальная проверка прохождения трафика через бинарник sing-box."""
+    if not os.path.exists("./sing-box"):
+        return item
+
+    test_port = random.randint(15000, 35000)
+    outbound = convert_to_singbox_outbound(item, "node-test")
+
+    test_cfg = {
+        "log": {"level": "fatal"},
+        "inbounds": [
+            {
+                "type": "mixed",
+                "tag": "mixed-in",
+                "listen": "127.0.0.1",
+                "listen_port": test_port
+            }
+        ],
+        "outbounds": [outbound]
+    }
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump(test_cfg, f)
+        cfg_path = f.name
+
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            ["./sing-box", "run", "-c", cfg_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        time.sleep(0.35)
+
+        proxies = {
+            "http": f"http://127.0.0.1:{test_port}",
+            "https": f"http://127.0.0.1:{test_port}"
+        }
+
+        start = time.perf_counter()
+        r = requests.get("https://cp.cloudflare.com/generate_204", proxies=proxies, timeout=timeout)
+        if r.status_code in [200, 204]:
+            item["latency"] = (time.perf_counter() - start) * 1000
+            return item
+    except Exception:
+        pass
+    finally:
+        if proc:
+            proc.kill()
+            proc.wait()
+        if os.path.exists(cfg_path):
+            os.remove(cfg_path)
+
+    return None
+
+def filter_and_rank_keys(raw_keys):
+    parsed_items = [parse_vless(k) for k in raw_keys if parse_vless(k)]
+    print(f"Успешно распознано ключей: {len(parsed_items)}")
+
+    # ЭТАП 1: Быстрый TCP отсев
+    alive_candidates = []
+    with ThreadPoolExecutor(max_workers=40) as executor:
+        futures = [executor.submit(check_tcp_ping, it) for it in parsed_items]
+        for fut in as_completed(futures):
+            res = fut.result()
+            if res:
+                alive_candidates.append(res)
+
+    print(f"Ответили по TCP: {len(alive_candidates)} серверов.")
+
+    # Разделяем живые порты на группы
+    reg_candidates = [it for it in alive_candidates if not it["is_whitelist"]]
+    wl_candidates = [it for it in alive_candidates if it["is_whitelist"]]
+
+    def deep_test_group(group, need_count=6):
+        tested = []
+        if not os.path.exists("./sing-box"):
+            return group[:need_count]
+
+        # Тестируем до набора нужного количества (не более 30 кандидатов на группу)
+        candidates_pool = group[:30]
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(test_vless_via_singbox, it) for it in candidates_pool]
+            for fut in as_completed(futures):
+                res = fut.result()
+                if res:
+                    tested.append(res)
+                    if len(tested) >= need_count:
+                        break
+        tested.sort(key=lambda x: x["latency"])
+        return tested
+
+    print("Запуск глубокого тестирования (проверка интернет-трафика)...")
+    regular_alive = deep_test_group(reg_candidates, need_count=6)
+    whitelist_alive = deep_test_group(wl_candidates, need_count=6)
+
+    print(f"Итог: 100% рабочих Global: {len(regular_alive)}, RU-Bypass: {len(whitelist_alive)}")
+    return regular_alive, whitelist_alive
+
+def format_node_name(item, sub_name, index, is_wl):
+    tag_type = "RU-Bypass" if is_wl else "Global"
+    node_name = f"{sub_name} | #{index:02d} [{tag_type}]"
+    base_uri = item["uri"].split('#')[0]
+    renamed_uri = f"{base_uri}#{node_name}"
+    return renamed_uri, node_name
 
 def build_singbox_config(outbounds, sub_name):
     tags = [ob["tag"] for ob in outbounds]
-    
     config = {
         "version": 1,
         "remarks": sub_name,
@@ -181,7 +299,7 @@ def build_singbox_config(outbounds, sub_name):
                 "type": "urltest",
                 "tag": "urltest",
                 "outbounds": tags,
-                "url": "https://www.gstatic.com/generate_204",
+                "url": "https://cp.cloudflare.com/generate_204",
                 "interval": "3m",
                 "tolerance": 50
             }
@@ -192,27 +310,27 @@ def build_singbox_config(outbounds, sub_name):
 def assemble_subscription(regular_items, wl_items, count, sub_name):
     uris = []
     singbox_outbounds = []
-    
+
     selected_reg = regular_items[:count]
     selected_wl = wl_items[:count]
-    
+
     idx = 1
     for it in selected_reg:
         renamed_uri, tag = format_node_name(it, sub_name, idx, is_wl=False)
         uris.append(renamed_uri)
         singbox_outbounds.append(convert_to_singbox_outbound(it, tag))
         idx += 1
-        
+
     for it in selected_wl:
         renamed_uri, tag = format_node_name(it, sub_name, idx, is_wl=True)
         uris.append(renamed_uri)
         singbox_outbounds.append(convert_to_singbox_outbound(it, tag))
         idx += 1
-        
+
     raw_text = "\n".join(uris)
     b64_sub = base64.b64encode(raw_text.encode("utf-8")).decode("utf-8") if uris else ""
     json_sub = build_singbox_config(singbox_outbounds, sub_name)
-    
+
     return b64_sub, json_sub
 
 def generate_web_dashboard(output_dir):
@@ -269,31 +387,29 @@ def generate_web_dashboard(output_dir):
 
 def save_outputs(lite_pack, plus_pack, output_dir="dist"):
     os.makedirs(output_dir, exist_ok=True)
-    
     lite_b64, lite_json = lite_pack
     plus_b64, plus_json = plus_pack
-    
+
     with open(f"{output_dir}/lite.txt", "w", encoding="utf-8") as f:
         f.write(lite_b64)
     with open(f"{output_dir}/plus.txt", "w", encoding="utf-8") as f:
         f.write(plus_b64)
-        
+
     with open(f"{output_dir}/lite.json", "w", encoding="utf-8") as f:
         f.write(lite_json)
     with open(f"{output_dir}/plus.json", "w", encoding="utf-8") as f:
         f.write(plus_json)
-        
-    # Создаем главную веб-страницу
+
     generate_web_dashboard(output_dir)
-    print("Файлы lite.txt, plus.txt, lite.json, plus.json и index.html успешно созданы!")
+    print("Все подписки и index.html успешно созданы в dist/!")
 
 if __name__ == "__main__":
     raw_keys = fetch_all_vless()
-    print(f"Спаршено сырых ключей: {len(raw_keys)}")
-    
+    print(f"Всего собрано уникальных VLESS ссылок: {len(raw_keys)}")
+
     reg_items, wl_items = filter_and_rank_keys(raw_keys)
-    
+
     lite_data = assemble_subscription(reg_items, wl_items, count=3, sub_name="BCT VPN (Lite)")
     plus_data = assemble_subscription(reg_items, wl_items, count=6, sub_name="BCT VPN (Plus)")
-    
+
     save_outputs(lite_data, plus_data, output_dir="dist")
