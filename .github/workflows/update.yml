@@ -24,6 +24,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Download sing-box core
+        run: |
+          # Скачиваем официальный релиз sing-box для реального тестирования ключей
+          curl -sLo sing-box.tar.gz https://github.com/SagerNet/sing-box/releases/download/v1.10.7/sing-box-1.10.7-linux-amd64.tar.gz
+          tar -xzf sing-box.tar.gz
+          mv sing-box-*/sing-box ./sing-box
+          chmod +x ./sing-box
+          rm -rf sing-box-* sing-box.tar.gz
+
       - name: Parse and Test Keys
         run: python parser.py
 
@@ -32,22 +41,17 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Переключаемся на чистую ветку gh-pages
           git checkout --orphan gh-pages
           git rm -rf .
           
-          # Проверяем, создались ли файлы в dist
           if [ -d "dist" ] && [ "$(ls -A dist)" ]; then
             cp -r dist/* .
             rm -rf dist
           else
-            echo "Внимание: папка dist пуста или не создана!"
+            echo "Ошибка: dist пуста"
             exit 1
           fi
           
-          # Добавляем все файлы, которые были сгенерированы
           git add -A
-          
-          # Делаем коммит только если есть изменения
-          git commit -m "Hourly update: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" || echo "Нет изменений для коммита"
+          git commit -m "Hourly update: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" || echo "No changes"
           git push origin gh-pages --force
