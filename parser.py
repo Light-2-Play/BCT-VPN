@@ -18,10 +18,11 @@ GLOBAL_SOURCES = [
     "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/vless.txt",
     "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
-    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless"
+    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless",
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/vless"
 ]
 
-# 2. СЕРВЕРЫ ДЛЯ БЕЛЫХ СПИСКОВ (WHITELIST) — проверенные прямые зеркала
+# 2. СЕРВЕРЫ ДЛЯ БЕЛЫХ СПИСКОВ (WHITELIST)
 WHITELIST_SOURCES = [
     "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
     "https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt",
@@ -32,8 +33,10 @@ WHITELIST_SOURCES = [
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
 
+# Официальный контрольный эндпоинт Google
 GOOGLE_DELAY_TEST_URL = "https://www.gstatic.com/generate_204"
 
+# Заблокированные в РФ домены для SNI
 BLOCKED_SNI_IN_RU = (
     "instagram", "facebook", "twitter", "x.com", "threads", "meta.com",
     "rutracker", "meduza", "bbc", "dw.com", "svoboda", "navalny",
@@ -43,7 +46,7 @@ BLOCKED_SNI_IN_RU = (
 IRAN_MARKERS = (".ir", "irancell", "mci.ir", "mkh.pw", "arvancloud")
 
 def get_free_port():
-    """Поиск свободного порта для тестов sing-box"""
+    """Выделение изолированного порта для каждого процесса sing-box"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('127.0.0.1', 0))
         return s.getsockname()[1]
@@ -95,15 +98,15 @@ def fetch_group_keys(sources, is_whitelist_group):
             resp = requests.get(url, headers=headers, timeout=12, verify=False)
             if resp.status_code == 200:
                 keys = extract_vless_keys(resp.text)
-                print(f"[{group_name}] {url} -> найдено: {len(keys)}")
+                print(f"[{group_name}] {url} -> получено: {len(keys)}")
                 for k in keys:
                     if k not in seen:
                         seen.add(k)
                         items.append({"uri": k, "is_whitelist": is_whitelist_group})
             else:
-                print(f"[{group_name}] {url} -> код ошибки: {resp.status_code}")
+                print(f"[{group_name}] {url} -> статус: {resp.status_code}")
         except Exception as e:
-            print(f"[{group_name}] {url} -> сбой загрузки: {e}")
+            print(f"[{group_name}] {url} -> ошибка: {e}")
 
     return items
 
@@ -126,7 +129,7 @@ def parse_vless(raw_item):
 
         target = sni or host or parsed.hostname.lower()
 
-        # Фильтрация для Global группы
+        # Фильтры под требования РФ для Global
         if not is_whitelist:
             if any(m in target for m in IRAN_MARKERS):
                 return None
@@ -150,11 +153,10 @@ def parse_vless(raw_item):
     except Exception:
         return None
 
-def check_tcp_ping(item, timeout=1.8):
-    start = time.perf_counter()
+def quick_socket_check(item, timeout=1.5):
+    """Предварительный отсев выключенных хостов, чтобы не тратить время теста sing-box"""
     try:
         with socket.create_connection((item["host"], item["port"]), timeout=timeout):
-            item["tcp_latency"] = (time.perf_counter() - start) * 1000
             return item
     except Exception:
         return None
@@ -184,14 +186,15 @@ def convert_to_singbox_outbound(item, tag_name):
         "network": "tcp"
     }
 
-    if flow and sec in ["tls", "reality"]:
+    # Flow xtls-rprx-vision допустим ТОЛЬКО для tcp. Для ws/grpc он ломает sing-box
+    if flow and sec in ["tls", "reality"] and net in ["tcp", ""]:
         outbound["flow"] = flow
 
     if sec in ["tls", "reality"]:
         tls_conf = {
             "enabled": True,
             "server_name": sni or server,
-            "insecure": True,  # КРИТИЧНО ДЛЯ WHITELIST: разрешает рукопожатие при подмене SNI
+            "insecure": True,  # Обязательно для Whitelist (обход проверки чужого SNI)
             "utls": {
                 "enabled": True,
                 "fingerprint": fp or "chrome"
@@ -219,13 +222,16 @@ def convert_to_singbox_outbound(item, tag_name):
 
     return outbound
 
-def test_vless_real_delay(item, timeout=4.5):
-    """Реальный замер задержки через sing-box туннель до Google"""
+def test_vless_live_google(item, timeout=4.0):
+    """
+    «ЖИВОЙ ТЕСТ»: Поднимает реальный sing-box туннель и совершает HTTP GET к Google.
+    Сервер считается живым ТОЛЬКО если Google вернул код 204 или 200.
+    """
     if not os.path.exists("./sing-box"):
-        return item
+        return None
 
     test_port = get_free_port()
-    outbound = convert_to_singbox_outbound(item, "node-test")
+    outbound = convert_to_singbox_outbound(item, "node-live-test")
 
     test_cfg = {
         "log": {"level": "fatal"},
@@ -252,14 +258,15 @@ def test_vless_real_delay(item, timeout=4.5):
             stderr=subprocess.DEVNULL
         )
 
+        # Ожидание готовности локального порта
         ready = False
         for _ in range(20):
             try:
-                with socket.create_connection(("127.0.0.1", test_port), timeout=0.05):
+                with socket.create_connection(("127.0.0.1", test_port), timeout=0.04):
                     ready = True
                     break
             except Exception:
-                time.sleep(0.05)
+                time.sleep(0.04)
 
         if not ready:
             return None
@@ -269,20 +276,13 @@ def test_vless_real_delay(item, timeout=4.5):
             "https": f"http://127.0.0.1:{test_port}"
         }
 
+        # Отправляем реальный пакет через поднятый туннель
         start = time.perf_counter()
-        # Проверяем доступ к Google (или Cloudflare в качестве резерва)
-        success = False
-        for target in [GOOGLE_DELAY_TEST_URL, "https://cp.cloudflare.com/generate_204"]:
-            try:
-                r = requests.get(target, proxies=proxies, timeout=timeout, allow_redirects=False)
-                if r.status_code in [200, 204, 301, 302]:
-                    success = True
-                    break
-            except Exception:
-                continue
-
-        if success:
-            item["latency"] = (time.perf_counter() - start) * 1000
+        r = requests.get(GOOGLE_DELAY_TEST_URL, proxies=proxies, timeout=timeout, allow_redirects=False)
+        
+        if r.status_code in [200, 204]:
+            real_delay = (time.perf_counter() - start) * 1000
+            item["latency"] = real_delay
             return item
     except Exception:
         pass
@@ -295,141 +295,69 @@ def test_vless_real_delay(item, timeout=4.5):
 
     return None
 
-def verify_russia_reachability(candidates, max_check=16):
-    """Проверка доступности портов из России через тестовые ноды Москвы"""
-    to_check = candidates[:max_check]
-    if not to_check:
+def run_pure_live_test_pool(group, target_count=6, max_candidates=180):
+    """
+    Проверяет собранную базу ТОЛЬКО живым тестом.
+    Никаких доборов по TCP: если сервер не пропустил трафик Google, он отбрасывается.
+    """
+    if not os.path.exists("./sing-box"):
+        print("sing-box не найден в системе!")
         return []
 
-    print(f"\n[RU-Check] Запуск проверки {len(to_check)} серверов напрямую из РФ (ноды Москва)...")
-    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+    pool = group[:max_candidates]
+    live_verified = []
 
-    active_checks = []
-    for item in to_check:
-        try:
-            url = f"https://check-host.net/check-tcp?host={item['host']}:{item['port']}&node=ru1.node.check-host.net&node=ru2.node.check-host.net"
-            r = requests.get(url, headers=headers, timeout=5)
-            if r.status_code == 200:
-                req_id = r.json().get("request_id")
-                if req_id:
-                    active_checks.append((item, req_id))
-            time.sleep(0.1)
-        except Exception:
-            continue
-
-    if not active_checks:
-        return candidates
-
-    time.sleep(3.5)
-
-    verified_ru = []
-    for item, req_id in active_checks:
-        try:
-            res_url = f"https://check-host.net/check-result/{req_id}"
-            res = requests.get(res_url, headers=headers, timeout=5).json()
-            is_alive_in_ru = False
-
-            for node_name, val in res.items():
-                if "ru" in node_name and val and len(val) > 0:
-                    entry = val[0]
-                    if isinstance(entry, list) and len(entry) > 0:
-                        if entry[0] == 1 or "Connected" in str(entry):
-                            is_alive_in_ru = True
-                            break
-
-            if is_alive_in_ru:
-                print(f" -> [РФ: Доступен] {item['host']}:{item['port']} | Задержка: {int(item['latency'])} ms")
-                verified_ru.append(item)
-            else:
-                print(f" -> [РФ: Заблокирован РКН/ТСПУ] {item['host']}:{item['port']}")
-        except Exception:
-            continue
-
-    print(f"[RU-Check] Подтверждено доступных из РФ: {len(verified_ru)} из {len(active_checks)}")
-
-    if len(verified_ru) >= 6:
-        return verified_ru
-
-    # Резервный добор из лучших кандидатов Google-Delay
-    already = {x['uri'] for x in verified_ru}
-    for it in candidates:
-        if it['uri'] not in already:
-            verified_ru.append(it)
-        if len(verified_ru) >= 6:
-            break
-
-    return verified_ru
-
-def run_group_tests(group, target_count=6, max_test_candidates=160):
-    """Тестирование с обязательной гарантией набора target_count серверов"""
-    if not os.path.exists("./sing-box"):
-        return group[:target_count]
-
-    pool = group[:max_test_candidates]
-    alive = []
-
-    print(f"Запуск Real Delay теста (пул: {len(pool)}, цель: {target_count})...")
+    print(f"Запуск живого теста Google (пул: {len(pool)} кандидатов, цель: {target_count})...")
     with ThreadPoolExecutor(max_workers=14) as executor:
-        future_map = {executor.submit(test_vless_real_delay, it): it for it in pool}
+        future_map = {executor.submit(test_vless_live_google, it): it for it in pool}
         for fut in as_completed(future_map):
             try:
                 res = fut.result()
                 if res and "latency" in res:
-                    alive.append(res)
-                    print(f" -> [Живой] {res['host']}:{res['port']} | Latency: {int(res['latency'])} ms")
-                    if len(alive) >= target_count + 4:
+                    live_verified.append(res)
+                    print(f" -> [ЖИВОЙ КЛЮЧ] {res['host']}:{res['port']} | Google Delay: {int(res['latency'])} ms")
+                    # Останавливаем опрос при наборе достаточного запаса лучших серверов
+                    if len(live_verified) >= target_count + 4:
                         for f in future_map:
                             f.cancel()
                         break
             except Exception:
                 pass
 
-    alive.sort(key=lambda x: x["latency"])
-
-    # СТРАХОВКА: если Real Delay вернул меньше target_count, добираем из ответивших по TCP
-    if len(alive) < target_count:
-        print(f"Предупреждение: Real Delay вернул {len(alive)}/{target_count}. Добираем проверенные по TCP...")
-        already = {x["uri"] for x in alive}
-        for it in group:
-            if it["uri"] not in already:
-                it["latency"] = it.get("tcp_latency", 999.0)
-                alive.append(it)
-            if len(alive) >= target_count:
-                break
-
-    return alive
+    # Сортируем строго по реальному времени отклика от Google
+    live_verified.sort(key=lambda x: x["latency"])
+    return live_verified
 
 def filter_and_rank_keys(raw_items):
     parsed_items = [parse_vless(k) for k in raw_items if parse_vless(k)]
-    print(f"Распознано корректных ссылок: {len(parsed_items)}")
+    print(f"Всего синтаксически корректных ключей: {len(parsed_items)}")
 
-    # Быстрый TCP отсев оффлайн портов
-    alive_tcp = []
+    # Быстрый сокет-фильтр (отсеивает заведомо выключенные порты)
+    alive_socket = []
     with ThreadPoolExecutor(max_workers=45) as executor:
-        futures = [executor.submit(check_tcp_ping, it) for it in parsed_items]
+        futures = [executor.submit(quick_socket_check, it) for it in parsed_items]
         for fut in as_completed(futures):
             res = fut.result()
             if res:
-                alive_tcp.append(res)
+                alive_socket.append(res)
 
-    print(f"Ответили на первичный TCP пинг: {len(alive_tcp)} серверов.")
+    print(f"Ответили на сокет: {len(alive_socket)} серверов.")
 
-    reg_candidates = [it for it in alive_tcp if not it["is_whitelist"]]
-    wl_candidates = [it for it in alive_tcp if it["is_whitelist"]]
+    reg_candidates = [it for it in alive_socket if not it["is_whitelist"]]
+    wl_candidates = [it for it in alive_socket if it["is_whitelist"]]
 
-    print(f"Кандидатов Global: {len(reg_candidates)}, Whitelist: {len(wl_candidates)}")
+    print(f"\nКандидатов на живой тест: Global = {len(reg_candidates)}, Whitelist = {len(wl_candidates)}")
 
-    # 1. Global: Real Delay + проверка из РФ
-    print("\n--- ТЕСТИРОВАНИЕ ГРУППЫ GLOBAL ---")
-    regular_alive = run_group_tests(reg_candidates, target_count=8, max_test_candidates=160)
-    regular_verified_for_ru = verify_russia_reachability(regular_alive, max_check=16)
+    # 1. Живой тест для Global (цель: минимум 6 живых для Plus)
+    print("\n--- ЖИВОЙ ТЕСТ: ГРУППА GLOBAL ---")
+    regular_live = run_pure_live_test_pool(reg_candidates, target_count=6, max_candidates=200)
 
-    # 2. Whitelist: Real Delay с insecure=True
-    print("\n--- ТЕСТИРОВАНИЕ ГРУППЫ WHITELIST ---")
-    whitelist_alive = run_group_tests(wl_candidates, target_count=6, max_test_candidates=160)
+    # 2. Живой тест для Whitelist (цель: минимум 6 живых для Plus)
+    print("\n--- ЖИВОЙ ТЕСТ: ГРУППА WHITELIST ---")
+    whitelist_live = run_pure_live_test_pool(wl_candidates, target_count=6, max_candidates=200)
 
-    print(f"\nИТОГ: Живых Global (для РФ): {len(regular_verified_for_ru)}, Whitelist: {len(whitelist_alive)}")
-    return regular_verified_for_ru, whitelist_alive
+    print(f"\nИТОГ ЖИВОГО ТЕСТА: 100% живых Global: {len(regular_live)}, Whitelist: {len(whitelist_live)}")
+    return regular_live, whitelist_live
 
 def format_node_name(item, sub_name, index, is_wl):
     tag_type = "Whitelist" if is_wl else "Global"
@@ -467,12 +395,14 @@ def build_singbox_config(outbounds, sub_name):
     return json.dumps(config, indent=2, ensure_ascii=False)
 
 def assemble_subscription(regular_items, wl_items, reg_count, wl_count, sub_name):
+    """Формирует подписку строго из ключей, прошедших живой тест"""
     uris = []
     singbox_outbounds = []
 
     selected_reg = regular_items[:reg_count]
     selected_wl = wl_items[:wl_count]
 
+    # Global узлы
     idx = 1
     for it in selected_reg:
         renamed_uri, tag = format_node_name(it, sub_name, idx, is_wl=False)
@@ -480,6 +410,7 @@ def assemble_subscription(regular_items, wl_items, reg_count, wl_count, sub_name
         singbox_outbounds.append(convert_to_singbox_outbound(it, tag))
         idx += 1
 
+    # Whitelist узлы
     wl_idx = 1
     for it in selected_wl:
         renamed_uri, tag = format_node_name(it, sub_name, wl_idx, is_wl=True)
@@ -516,7 +447,7 @@ def generate_web_dashboard(output_dir):
 <body>
     <div class="card">
         <h1>BCT VPN Subscriptions</h1>
-        <p>Google Real Delay • Проверка доступности из РФ</p>
+        <p>100% Живой тест Google Real Delay • Обновление каждый час</p>
 
         <div class="section">
             <div class="section-title">
@@ -561,30 +492,31 @@ def save_outputs(lite_pack, plus_pack, output_dir="dist"):
         f.write(plus_json)
 
     generate_web_dashboard(output_dir)
-    print("Файлы lite.txt, plus.txt, lite.json, plus.json и index.html созданы!")
+    print("\nПодписки BCT VPN (Lite) и (Plus) успешно сформированы и сохранены!")
 
 if __name__ == "__main__":
     global_keys = fetch_group_keys(GLOBAL_SOURCES, is_whitelist_group=False)
     wl_keys = fetch_group_keys(WHITELIST_SOURCES, is_whitelist_group=True)
 
     all_keys = global_keys + wl_keys
-    print(f"Всего получено ключей: {len(all_keys)} (Global: {len(global_keys)}, Whitelist: {len(wl_keys)})")
+    print(f"\nВсего в базе для анализа: {len(all_keys)} ключей (Global: {len(global_keys)}, Whitelist: {len(wl_keys)})")
 
-    reg_items, wl_items = filter_and_rank_keys(all_keys)
+    # Глубокий живой тест собранной базы
+    regular_live, whitelist_live = filter_and_rank_keys(all_keys)
 
-    # Lite: строго 3 Global и 3 Whitelist
+    # 1. BCT VPN (Lite): берём 3 самых быстрых Global и 3 самых быстрых Whitelist
     lite_data = assemble_subscription(
-        regular_items=reg_items,
-        wl_items=wl_items,
+        regular_items=regular_live,
+        wl_items=whitelist_live,
         reg_count=3,
         wl_count=3,
         sub_name="BCT VPN (Lite)"
     )
 
-    # Plus: строго 6 Global и 6 Whitelist
+    # 2. BCT VPN (Plus): берём 6 самых быстрых Global и 6 самых быстрых Whitelist
     plus_data = assemble_subscription(
-        regular_items=reg_items,
-        wl_items=wl_items,
+        regular_items=regular_live,
+        wl_items=whitelist_live,
         reg_count=6,
         wl_count=6,
         sub_name="BCT VPN (Plus)"
