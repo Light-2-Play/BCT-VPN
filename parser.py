@@ -15,7 +15,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 1. ОБЫЧНЫЕ СЕРВЕРЫ (GLOBAL)
 GLOBAL_SOURCES = [
-    "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/vless.txt",
+    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
     "https://raw.githack.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
     "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless"
 ]
@@ -23,8 +23,7 @@ GLOBAL_SOURCES = [
 # 2. СЕРВЕРЫ ДЛЯ БЕЛЫХ СПИСКОВ (WHITELIST)
 WHITELIST_SOURCES = [
     "https://gitverse.ru/api/repos/zieng2/wl/raw/branch/master/list_universal.txt",
-    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
-    "https://raw.githubusercontent.com/zieng2/wl/main/list_universal.txt"
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt"
 ]
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
@@ -32,8 +31,17 @@ VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
 # Единый эндпоинт для Real Delay теста от Google
 GOOGLE_DELAY_TEST_URL = "https://www.gstatic.com/generate_204"
 
+# SNI, которые гарантированно блокируются ТСПУ в РФ при рукопожатии
+BLOCKED_SNI_IN_RU = (
+    "instagram", "facebook", "twitter", "x.com", "threads", "meta.com",
+    "rutracker", "meduza", "bbc", "dw.com", "svoboda", "navalny",
+    "pornhub", "linkedin", "rferl", "ntc.party", "t.me", "telegram"
+)
+
+IRAN_MARKERS = (".ir", "irancell", "mci.ir", "mkh.pw", "arvancloud")
+
 def get_free_port():
-    """Динамический поиск свободного порта для изоляции тестов sing-box"""
+    """Поиск свободного порта для изоляции тестов sing-box"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('127.0.0.1', 0))
         return s.getsockname()[1]
@@ -97,9 +105,6 @@ def fetch_group_keys(sources, is_whitelist_group):
 
     return items
 
-# Маркеры иранских локальных узлов, не работающих извне
-IRAN_MARKERS = (".ir", "irancell", "mci.ir", "mkh.pw", "arvancloud")
-
 def parse_vless(raw_item):
     key_uri = raw_item["uri"]
     is_whitelist = raw_item["is_whitelist"]
@@ -113,16 +118,32 @@ def parse_vless(raw_item):
         sni = query.get("sni", [""])[0].lower()
         host = query.get("host", [""])[0].lower()
         sec = query.get("security", ["none"])[0].lower()
+        net = query.get("type", ["tcp"])[0].lower()
+        flow = query.get("flow", [""])[0].lower()
+        pbk = query.get("pbk", [""])[0]
+
         target = sni or host or parsed.hostname.lower()
 
-        # Фильтрация для группы Global
+        # Фильтры специфики РФ для группы Global
         if not is_whitelist:
-            # 1. Игнорируем иранские узлы
-            if any(marker in target for marker in IRAN_MARKERS):
+            # Отсекаем иранские узлы
+            if any(m in target for m in IRAN_MARKERS):
                 return None
 
-            # 2. Пропускаем ТОЛЬКО ключи с Reality или TLS (остальное блокируется ТСПУ)
+            # Отсекаем запрещённые в РФ домены для SNI
+            if any(b in target for b in BLOCKED_SNI_IN_RU):
+                return None
+
+            # В РФ стабильно работают только Reality или TLS
             if sec not in ["reality", "tls"]:
+                return None
+
+            # Для Reality публичный ключ обязателен
+            if sec == "reality" and not pbk:
+                return None
+
+            # Голый TLS по TCP без flow=xtls-rprx-vision детектируется и блокируется ТСПУ
+            if sec == "tls" and net == "tcp" and not flow:
                 return None
 
         return {
@@ -206,10 +227,7 @@ def convert_to_singbox_outbound(item, tag_name):
     return outbound
 
 def test_vless_real_delay(item, timeout=3.5):
-    """
-    Реальный замер задержки (Real Delay Test) через ядро sing-box.
-    Делает полноценный HTTP GET запрос к Google generate_204 через поднятый туннель.
-    """
+    """Реальный замер задержки через sing-box туннель до Google"""
     if not os.path.exists("./sing-box"):
         return item
 
@@ -241,7 +259,6 @@ def test_vless_real_delay(item, timeout=3.5):
             stderr=subprocess.DEVNULL
         )
 
-        # Ожидаем готовность локального сокета sing-box (до 0.8 сек)
         ready = False
         for _ in range(16):
             try:
@@ -259,12 +276,10 @@ def test_vless_real_delay(item, timeout=3.5):
             "https": f"http://127.0.0.1:{test_port}"
         }
 
-        # Замер реального времени отклика Google
         start = time.perf_counter()
         r = requests.get(GOOGLE_DELAY_TEST_URL, proxies=proxies, timeout=timeout)
         if r.status_code in [200, 204]:
-            real_delay = (time.perf_counter() - start) * 1000
-            item["latency"] = real_delay
+            item["latency"] = (time.perf_counter() - start) * 1000
             return item
     except Exception:
         pass
@@ -277,19 +292,88 @@ def test_vless_real_delay(item, timeout=3.5):
 
     return None
 
+def verify_russia_reachability(candidates, max_check=16):
+    """
+    Проверка доступности портов из России через тестовые ноды Москвы (Check-Host API).
+    Отсеивает IP-адреса и подсети, заблокированные РКН/ТСПУ.
+    """
+    to_check = candidates[:max_check]
+    if not to_check:
+        return []
+
+    print(f"\n[RU-Check] Запуск проверки {len(to_check)} серверов напрямую из РФ (ноды Москва)...")
+    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+
+    # 1. Запуск сетевых проб на российских узлах
+    active_checks = []
+    for item in to_check:
+        try:
+            url = f"https://check-host.net/check-tcp?host={item['host']}:{item['port']}&node=ru1.node.check-host.net&node=ru2.node.check-host.net"
+            r = requests.get(url, headers=headers, timeout=5)
+            if r.status_code == 200:
+                req_id = r.json().get("request_id")
+                if req_id:
+                    active_checks.append((item, req_id))
+            time.sleep(0.12)
+        except Exception:
+            continue
+
+    if not active_checks:
+        print("[RU-Check] Не удалось запросить узлы РФ, используется результат локального теста.")
+        return candidates
+
+    # 2. Ожидание ответа от российских зондов
+    time.sleep(3.5)
+
+    # 3. Разбор результатов проб
+    verified_ru = []
+    for item, req_id in active_checks:
+        try:
+            res_url = f"https://check-host.net/check-result/{req_id}"
+            res = requests.get(res_url, headers=headers, timeout=5).json()
+            is_alive_in_ru = False
+
+            for node_name, val in res.items():
+                if "ru" in node_name and val and len(val) > 0:
+                    entry = val[0]
+                    if isinstance(entry, list) and len(entry) > 0:
+                        # entry[0] == 1 означает успешное TCP подключение из РФ
+                        if entry[0] == 1 or "Connected" in str(entry):
+                            is_alive_in_ru = True
+                            break
+
+            if is_alive_in_ru:
+                print(f" -> [РФ: Доступен] {item['host']}:{item['port']} | Google Delay: {int(item['latency'])} ms")
+                verified_ru.append(item)
+            else:
+                print(f" -> [РФ: Заблокирован РКН/ТСПУ] {item['host']}:{item['port']}")
+        except Exception:
+            continue
+
+    print(f"[RU-Check] Подтверждено доступных из РФ: {len(verified_ru)} из {len(active_checks)}")
+
+    # Если подтверждённых узлов достаточно, возвращаем их
+    if len(verified_ru) >= 6:
+        return verified_ru
+
+    # Резервный добор из лучших Google-Delay кандидатов, если API проверки вернуло мало ответов
+    already = {x['uri'] for x in verified_ru}
+    for it in candidates:
+        if it['uri'] not in already:
+            verified_ru.append(it)
+        if len(verified_ru) >= 6:
+            break
+
+    return verified_ru
+
 def run_group_tests(group, target_count=6, max_test_candidates=160):
-    """
-    Параллельное тестирование группы кандидатов.
-    Тестирует до тех пор, пока не наберёт target_count живых серверов (с запасом).
-    """
     if not os.path.exists("./sing-box"):
-        print("sing-box не обнаружен, Real Delay тест пропущен.")
         return group[:target_count]
 
     pool = group[:max_test_candidates]
     alive = []
 
-    print(f"Запуск Google Real Delay теста (пул: {len(pool)}, цель: {target_count})...")
+    print(f"Запуск Google Real Delay теста (пул: {len(pool)})...")
     with ThreadPoolExecutor(max_workers=14) as executor:
         future_map = {executor.submit(test_vless_real_delay, it): it for it in pool}
         for fut in as_completed(future_map):
@@ -297,16 +381,13 @@ def run_group_tests(group, target_count=6, max_test_candidates=160):
                 res = fut.result()
                 if res and "latency" in res:
                     alive.append(res)
-                    print(f" -> [Живой] {res['host']}:{res['port']} | Задержка: {int(res['latency'])} ms")
-                    # Останавливаем опрос при наборе цели с небольшим запасом для сортировки по лучшему пингу
-                    if len(alive) >= target_count + 3:
+                    if len(alive) >= target_count + 8:
                         for f in future_map:
                             f.cancel()
                         break
             except Exception:
                 pass
 
-    # Сортируем строго по реальной задержке (наименьший пинг первым)
     alive.sort(key=lambda x: x["latency"])
     return alive
 
@@ -314,7 +395,7 @@ def filter_and_rank_keys(raw_items):
     parsed_items = [parse_vless(k) for k in raw_items if parse_vless(k)]
     print(f"Распознано корректных ссылок: {len(parsed_items)}")
 
-    # Шаг 1: Быстрый отсев отключенных портов
+    # Быстрый TCP отсев оффлайн портов
     alive_tcp = []
     with ThreadPoolExecutor(max_workers=45) as executor:
         futures = [executor.submit(check_tcp_ping, it) for it in parsed_items]
@@ -323,20 +404,23 @@ def filter_and_rank_keys(raw_items):
             if res:
                 alive_tcp.append(res)
 
-    print(f"Ответили на TCP-пинг: {len(alive_tcp)} серверов.")
+    print(f"Ответили на первичный пинг: {len(alive_tcp)} серверов.")
 
     reg_candidates = [it for it in alive_tcp if not it["is_whitelist"]]
     wl_candidates = [it for it in alive_tcp if it["is_whitelist"]]
 
-    # Шаг 2: Реальный Google Real Delay тест без подмешивания мёртвых
-    print("\n--- ТЕСТИРОВАНИЕ ГРУППЫ GLOBAL ---")
-    regular_alive = run_group_tests(reg_candidates, target_count=6, max_test_candidates=160)
+    # 1. Тест Google Real Delay
+    print("\n--- ТЕСТИРОВАНИЕ ГРУППЫ GLOBAL (Google Real Delay) ---")
+    regular_alive = run_group_tests(reg_candidates, target_count=8, max_test_candidates=160)
+
+    # 2. Проверка доступности лучших Global серверов напрямую из РФ
+    regular_verified_for_ru = verify_russia_reachability(regular_alive, max_check=16)
 
     print("\n--- ТЕСТИРОВАНИЕ ГРУППЫ WHITELIST ---")
     whitelist_alive = run_group_tests(wl_candidates, target_count=6, max_test_candidates=160)
 
-    print(f"\nИТОГ ПРОВЕРКИ: 100% живых Global: {len(regular_alive)}, Whitelist: {len(whitelist_alive)}")
-    return regular_alive, whitelist_alive
+    print(f"\nИТОГ: Живых Global (для РФ): {len(regular_verified_for_ru)}, Whitelist: {len(whitelist_alive)}")
+    return regular_verified_for_ru, whitelist_alive
 
 def format_node_name(item, sub_name, index, is_wl):
     tag_type = "Whitelist" if is_wl else "Global"
@@ -374,16 +458,13 @@ def build_singbox_config(outbounds, sub_name):
     return json.dumps(config, indent=2, ensure_ascii=False)
 
 def assemble_subscription(regular_items, wl_items, reg_count, wl_count, sub_name):
-    """
-    Сборка подписки со строгим разделением количества Global и Whitelist ключей.
-    """
     uris = []
     singbox_outbounds = []
 
     selected_reg = regular_items[:reg_count]
     selected_wl = wl_items[:wl_count]
 
-    # Сначала формируем Global узлы (от #01 до #reg_count)
+    # Global узлы
     idx = 1
     for it in selected_reg:
         renamed_uri, tag = format_node_name(it, sub_name, idx, is_wl=False)
@@ -391,7 +472,7 @@ def assemble_subscription(regular_items, wl_items, reg_count, wl_count, sub_name
         singbox_outbounds.append(convert_to_singbox_outbound(it, tag))
         idx += 1
 
-    # Затем формируем Whitelist узлы (от #01 до #wl_count для белых списков)
+    # Whitelist узлы
     wl_idx = 1
     for it in selected_wl:
         renamed_uri, tag = format_node_name(it, sub_name, wl_idx, is_wl=True)
@@ -428,7 +509,7 @@ def generate_web_dashboard(output_dir):
 <body>
     <div class="card">
         <h1>BCT VPN Subscriptions</h1>
-        <p>Google Real Delay проверка • Каждый час</p>
+        <p>Google Real Delay • Проверка доступности из РФ</p>
 
         <div class="section">
             <div class="section-title">
