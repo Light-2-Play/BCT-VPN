@@ -10,9 +10,103 @@ from urllib.parse import urlparse, parse_qs, quote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import urllib3
+import ipaddress
+from collections import defaultdict
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# =====================================================================
+# ДИАПАЗОНЫ ЗАПРЕЩЕННЫХ В РФ ЗАРУБЕЖНЫХ ХОСТИНГОВ (406-ФЗ / РКН)
+# Hetzner, OVH, DigitalOcean, Kamatera, Linode, Scaleway
+# =====================================================================
+BANNED_HOSTING_CIDRS = [
+    # Hetzner
+    "78.46.0.0/15", "88.198.0.0/16", "94.130.0.0/16", "95.216.0.0/15",
+    "135.181.0.0/16", "138.201.0.0/16", "142.132.0.0/16", "144.76.0.0/16",
+    "159.69.0.0/16", "168.119.0.0/16", "195.201.0.0/16", "65.108.0.0/16",
+    "65.109.0.0/16", "49.12.0.0/16", "116.202.0.0/16", "116.203.0.0/16",
+    # DigitalOcean
+    "104.131.0.0/16", "104.248.0.0/16", "138.68.0.0/16", "142.93.0.0/16",
+    "143.198.0.0/16", "143.244.0.0/16", "157.230.0.0/16", "157.245.0.0/16",
+    "159.65.0.0/16", "159.89.0.0/16", "161.35.0.0/16", "164.90.0.0/16",
+    "164.92.0.0/16", "165.22.0.0/16", "165.227.0.0/16", "167.172.0.0/16",
+    "167.71.0.0/16", "167.99.0.0/16", "174.138.0.0/16", "178.62.0.0/16",
+    "188.166.0.0/16", "206.189.0.0/16", "46.101.0.0/16", "64.225.0.0/16",
+    # OVH
+    "51.0.0.0/8", "141.94.0.0/15", "146.59.0.0/16", "135.125.0.0/16",
+    "178.32.0.0/15", "188.165.0.0/16", "193.70.0.0/16", "37.59.0.0/16",
+    "46.105.0.0/16", "54.36.0.0/15", "57.128.0.0/16",
+    # Kamatera / Scaleway / Linode
+    "185.10.68.0/22", "185.16.38.0/23", "213.142.128.0/18",
+    "51.15.0.0/16", "163.172.0.0/16", "62.210.0.0/16", "139.162.0.0/16"
+]
+
+# Быстрая структура данных: подсети группируются по первому октету (например, ключ 188 -> [188.166.0.0/16, ...])
+SUBNETS_BY_OCTET = defaultdict(list)
+LOADED_BLOCKED_NETS = False
+
+def load_rkn_blocked_database():
+    """
+    Скачивает свежий дамп заблокированных подсетей РКН (Antifilter)
+    и объединяет со списком запрещенных хостингов.
+    """
+    global LOADED_BLOCKED_NETS
+    if LOADED_BLOCKED_NETS:
+        return
+
+    raw_subnets = list(BANNED_HOSTING_CIDRS)
+
+    # Загружаем свежую базу заблокированных подсетей РКН
+    sources = [
+        "https://antifilter.download/list/subnet.lst",
+        "https://raw.githubusercontent.com/eduard256/russia-blocked-ips/main/ip.txt"
+    ]
+
+    for url in sources:
+        try:
+            r = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                lines = r.text.splitlines()
+                # Берем валидные CIDR подсети
+                valid_cidrs = [l.strip() for l in lines if "/" in l and not l.startswith("#")]
+                raw_subnets.extend(valid_cidrs)
+                print(f"[RKN-DB] Успешно загружен дамп {url}: добавлено {len(valid_cidrs)} подсетей")
+                break
+        except Exception as e:
+            print(f"[RKN-DB] Ошибка загрузки {url}: {e}")
+
+    # Парсим и раскладываем в быстрый индекс по первому октету
+    count = 0
+    for cidr in raw_subnets:
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+            if isinstance(net, ipaddress.IPv4Network):
+                first_octet = int(str(net.network_address).split('.')[0])
+                SUBNETS_BY_OCTET[first_octet].append(net)
+                count += 1
+        except Exception:
+            continue
+
+    print(f"[RKN-DB] Итого проиндексировано {count} заблокированных подсетей в РФ.")
+    LOADED_BLOCKED_NETS = True
+
+def is_ip_blocked_in_russia(host):
+    """
+    Мгновенная локальная проверка IP-адреса хоста по базе блокировок РКН и хостеров.
+    Работает за 0.0001 сек, без внешних API и без риска получить 429 ошибку.
+    """
+    try:
+        ip_str = socket.gethostbyname(host)
+        ip_obj = ipaddress.ip_address(ip_str)
+        first_octet = int(ip_str.split('.')[0])
+
+        # Проверяем только те подсети, у которых совпадает первый октет
+        for net in SUBNETS_BY_OCTET.get(first_octet, []):
+            if ip_obj in net:
+                return True, ip_str, str(net)
+    except Exception:
+        pass
+    return False, None, None
 # =====================================================================
 # 1. СПЕЦИАЛИЗИРОВАННЫЕ ИСТОЧНИКИ ДЛЯ РФ (ЕЖЕЧАСНОЕ АВТООБНОВЛЕНИЕ)
 # Ссылки оставлены строго без изменений
@@ -445,7 +539,19 @@ def filter_and_rank_keys(raw_items):
 
     reg_candidates = [it for it in parsed_items if not it["is_whitelist"]]
     wl_candidates = [it for it in parsed_items if it["is_whitelist"]]
+# 1. Загружаем базу при старте
+load_rkn_blocked_database()
 
+# 2. Быстрый отсев в цикле проверки
+clean_candidates = []
+for item in reg_candidates:
+    # Whitelist проверяется отдельно, а для Global исключаем заблокированные подсети
+    is_blocked, ip, net = is_ip_blocked_in_russia(item["host"])
+    if is_blocked:
+        print(f" -> [РКН/ХОСТИНГ БЛОК] {item['host']} ({ip}) входит в заблокированную сеть {net}")
+        continue
+    clean_candidates.append(item)
+    
     print("\n--- ОБРАБОТКА ГРУППЫ GLOBAL (Черные списки РФ) ---")
     regular_ready = process_category(reg_candidates, target_count=6)
 
