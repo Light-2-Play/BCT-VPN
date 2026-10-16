@@ -539,28 +539,29 @@ def filter_and_rank_keys(raw_items):
 
     reg_candidates = [it for it in parsed_items if not it["is_whitelist"]]
     wl_candidates = [it for it in parsed_items if it["is_whitelist"]]
-# 1. Загружаем базу при старте
-load_rkn_blocked_database()
 
-# 2. Быстрый отсев в цикле проверки
-clean_candidates = []
-for item in reg_candidates:
-    # Whitelist проверяется отдельно, а для Global исключаем заблокированные подсети
-    is_blocked, ip, net = is_ip_blocked_in_russia(item["host"])
-    if is_blocked:
-        print(f" -> [РКН/ХОСТИНГ БЛОК] {item['host']} ({ip}) входит в заблокированную сеть {net}")
-        continue
-    clean_candidates.append(item)
-    
+    # 1. Загружаем базу при старте
+    load_rkn_blocked_database()
+
+    # 2. Быстрый отсев в цикле проверки
+    clean_candidates = []
+    for item in reg_candidates:
+        # Whitelist проверяется отдельно, а для Global исключаем заблокированные подсети
+        is_blocked, ip, net = is_ip_blocked_in_russia(item["host"])
+        if is_blocked:
+            print(f" -> [РКН/ХОСТИНГ БЛОК] {item['host']} ({ip}) входит в заблокированную сеть {net}")
+            continue
+        clean_candidates.append(item)
+
     print("\n--- ОБРАБОТКА ГРУППЫ GLOBAL (Черные списки РФ) ---")
-    regular_ready = process_category(reg_candidates, target_count=6)
+    regular_ready = process_category(clean_candidates, target_count=6)
 
     print("\n--- ОБРАБОТКА ГРУППЫ WHITELIST (Белые списки РФ) ---")
     whitelist_ready = process_category(wl_candidates, target_count=6)
 
     print(f"\nИТОГ: Готовых серверов Global: {len(regular_ready)}, Whitelist: {len(whitelist_ready)}")
     return regular_ready, whitelist_ready
-
+    
 def format_node_name(item, sub_name, index, is_wl):
     tag_type = "Whitelist" if is_wl else "Global"
     node_name = f"{sub_name} | #{index:02d} [{tag_type}]"
