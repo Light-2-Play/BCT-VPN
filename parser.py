@@ -414,6 +414,31 @@ def process_category(candidates, target_count=6, max_test=100):
     print(f"Отобрано гарантированно: {len(verified_live)} серверов.")
     return verified_live
 
+def check_reachability_from_russia(host, port, timeout=5):
+    """Проверка доступности сервера зондом, физически находящимся в РФ"""
+    url = "https://api.globalping.io/v1/measurements"
+    payload = {
+        "limit": 1,
+        "locations": [{"country": "RU"}],
+        "target": host,
+        "type": "tcp",
+        "measurementOptions": {"port": int(port)}
+    }
+    try:
+        req = requests.post(url, json=payload, timeout=timeout)
+        if req.status_code == 201:
+            m_id = req.json().get("id")
+            time.sleep(2.0) # Даем зонду в РФ 2 секунды на пинг
+            res = requests.get(f"{url}/{m_id}", timeout=timeout).json()
+            results = res.get("results", [])
+            if results:
+                status = results[0].get("result", {}).get("status")
+                # Если зонд из РФ смог подключиться:
+                return status == "finished"
+    except Exception:
+        pass
+    return False
+
 def filter_and_rank_keys(raw_items):
     parsed_items = [parse_vless(k) for k in raw_items if parse_vless(k)]
     print(f"Всего распознано корректных ключей: {len(parsed_items)}")
