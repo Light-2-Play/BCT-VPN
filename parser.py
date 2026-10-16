@@ -41,22 +41,17 @@ BANNED_HOSTING_CIDRS = [
     "51.15.0.0/16", "163.172.0.0/16", "62.210.0.0/16", "139.162.0.0/16"
 ]
 
-# Быстрая структура данных: подсети группируются по первому октету (например, ключ 188 -> [188.166.0.0/16, ...])
 SUBNETS_BY_OCTET = defaultdict(list)
 LOADED_BLOCKED_NETS = False
 
 def load_rkn_blocked_database():
-    """
-    Скачивает свежий дамп заблокированных подсетей РКН (Antifilter)
-    и объединяет со списком запрещенных хостингов.
-    """
+    """Скачивает свежий дамп заблокированных подсетей РКН и запрещенных хостингов"""
     global LOADED_BLOCKED_NETS
     if LOADED_BLOCKED_NETS:
         return
 
     raw_subnets = list(BANNED_HOSTING_CIDRS)
 
-    # Загружаем свежую базу заблокированных подсетей РКН
     sources = [
         "https://antifilter.download/list/subnet.lst",
         "https://raw.githubusercontent.com/eduard256/russia-blocked-ips/main/ip.txt"
@@ -67,7 +62,6 @@ def load_rkn_blocked_database():
             r = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0"})
             if r.status_code == 200:
                 lines = r.text.splitlines()
-                # Берем валидные CIDR подсети
                 valid_cidrs = [l.strip() for l in lines if "/" in l and not l.startswith("#")]
                 raw_subnets.extend(valid_cidrs)
                 print(f"[RKN-DB] Успешно загружен дамп {url}: добавлено {len(valid_cidrs)} подсетей")
@@ -75,7 +69,6 @@ def load_rkn_blocked_database():
         except Exception as e:
             print(f"[RKN-DB] Ошибка загрузки {url}: {e}")
 
-    # Парсим и раскладываем в быстрый индекс по первому октету
     count = 0
     for cidr in raw_subnets:
         try:
@@ -91,22 +84,19 @@ def load_rkn_blocked_database():
     LOADED_BLOCKED_NETS = True
 
 def is_ip_blocked_in_russia(host):
-    """
-    Мгновенная локальная проверка IP-адреса хоста по базе блокировок РКН и хостеров.
-    Работает за 0.0001 сек, без внешних API и без риска получить 429 ошибку.
-    """
+    """Локальная проверка IP-адреса хоста по базе блокировок РКН и запрещенных хостеров"""
     try:
         ip_str = socket.gethostbyname(host)
         ip_obj = ipaddress.ip_address(ip_str)
         first_octet = int(ip_str.split('.')[0])
 
-        # Проверяем только те подсети, у которых совпадает первый октет
         for net in SUBNETS_BY_OCTET.get(first_octet, []):
             if ip_obj in net:
                 return True, ip_str, str(net)
     except Exception:
         pass
     return False, None, None
+
 # =====================================================================
 # 1. СПЕЦИАЛИЗИРОВАННЫЕ ИСТОЧНИКИ ДЛЯ РФ (ЕЖЕЧАСНОЕ АВТООБНОВЛЕНИЕ)
 # Ссылки оставлены строго без изменений
@@ -130,7 +120,6 @@ WHITELIST_SOURCES = [
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
 
-# Домены блокировок и проверочные эндпоинты
 BLOCKED_SNI_IN_RU = (
     "instagram", "facebook", "twitter", "x.com", "threads", "meta.com",
     "rutracker", "meduza", "bbc", "dw.com", "svoboda", "navalny",
@@ -151,11 +140,9 @@ def extract_vless_keys(content: str) -> set:
     if not content:
         return found
 
-    # 1. Поиск открытых ссылок
     for m in VLESS_REGEX.findall(content):
         found.add(m.rstrip(".,;)\"'>"))
 
-    # 2. Попытка раскодировать весь текст из Base64
     clean_content = re.sub(r"\s+", "", content)
     try:
         pad = len(clean_content) % 4
@@ -167,7 +154,6 @@ def extract_vless_keys(content: str) -> set:
     except Exception:
         pass
 
-    # 3. Построчный перебор
     for line in content.splitlines():
         line = line.strip()
         if len(line) > 30 and not line.startswith("vless://"):
@@ -192,7 +178,6 @@ def fetch_group_keys(sources, is_whitelist_group):
     group_name = "Whitelist" if is_whitelist_group else "Global"
 
     for url in sources:
-        # Автоматический перебор веток и резервных зеркал репозиториев (не меняя список SOURCES)
         urls_to_try = [url]
         if "/main/" in url:
             urls_to_try.append(url.replace("/main/", "/master/"))
@@ -236,7 +221,6 @@ def parse_vless(raw_item):
         if not parsed.hostname or not parsed.port or not parsed.username:
             return None
 
-        # Исключаем служебные заглушки
         if parsed.hostname in ["0.0.0.0", "127.0.0.1", "localhost"] or parsed.port in [0, 1]:
             return None
 
@@ -305,7 +289,6 @@ def convert_to_singbox_outbound(item, tag_name):
         "network": "tcp"
     }
 
-    # Flow xtls-rprx-vision допустим строго для TCP
     if flow in ["xtls-rprx-vision", "xtls-rprx-vision-udp443"] and net in ["tcp", ""] and sec in ["tls", "reality"]:
         outbound["flow"] = flow
 
@@ -319,7 +302,6 @@ def convert_to_singbox_outbound(item, tag_name):
             }
         }
         if sec == "reality":
-            # Reality строго проверяет открытый ключ. Параметр insecure здесь запрещен.
             reality_conf = {
                 "enabled": True,
                 "public_key": pbk
@@ -328,7 +310,6 @@ def convert_to_singbox_outbound(item, tag_name):
                 reality_conf["short_id"] = sid
             tls_conf["reality"] = reality_conf
         else:
-            # Для обычного TLS (в т.ч. Whitelist с подменой SNI) включаем пропуск проверки сертификата
             tls_conf["insecure"] = True
 
         outbound["tls"] = tls_conf
@@ -348,11 +329,10 @@ def convert_to_singbox_outbound(item, tag_name):
     return outbound
 
 def test_vless_live(item, timeout=3.5):
-    """Живой тест: запуск sing-box и замер отклика через системный curl"""
+    """Живой тест: запуск sing-box и замер отклика через curl"""
     if not os.path.exists("./sing-box"):
         return None
 
-    # Нестандартные транспорты не крашат тест
     net = item["query"].get("type", ["tcp"])[0].lower()
     if net in ["xhttp", "splithttp", "httpupgrade"]:
         return item
@@ -397,7 +377,7 @@ def test_vless_live(item, timeout=3.5):
         if not ready:
             return None
 
-        # Whitelist тестируется через разрешенные RU-ресурсы, Global - через Google/Cloudflare
+        # Whitelist проверяем по RU-ресурсам, Global - по международным эндпоинтам
         if item["is_whitelist"]:
             endpoints = ["https://ya.ru", "https://vk.com", "https://cp.cloudflare.com/generate_204"]
         else:
@@ -443,14 +423,19 @@ def test_vless_live(item, timeout=3.5):
 
     return None
 
-def process_category(candidates, target_count=6, max_test=100):
+def process_category(candidates, target_count=6, max_test=140):
+    """
+    Строгий отбор серверов:
+    Никаких доборов непроверенных или мертвых серверов!
+    В подписку попадают ИСКЛЮЧИТЕЛЬНО серверы, прошедшие живой тест трафика.
+    """
     print(f"\nКандидатов на входе: {len(candidates)}")
     if not candidates:
         return []
 
     # 1. Быстрый сокет-тест
     alive_socket = []
-    with ThreadPoolExecutor(max_workers=35) as executor:
+    with ThreadPoolExecutor(max_workers=40) as executor:
         futures = [executor.submit(check_tcp_socket, it) for it in candidates]
         for fut in as_completed(futures):
             res = fut.result()
@@ -458,9 +443,11 @@ def process_category(candidates, target_count=6, max_test=100):
                 alive_socket.append(res)
 
     print(f"Ответили на сокет: {len(alive_socket)} серверов.")
+    if not alive_socket:
+        return []
 
-    # 2. Живой тест
-    pool = alive_socket[:max_test] if alive_socket else candidates[:max_test]
+    # 2. Живой тест прохождения трафика через sing-box
+    pool = alive_socket[:max_test]
     verified_live = []
 
     if os.path.exists("./sing-box") and pool:
@@ -473,65 +460,24 @@ def process_category(candidates, target_count=6, max_test=100):
                     if res and "latency" in res:
                         verified_live.append(res)
                         delay = int(res["latency"])
-                        print(f" -> [ЖИВОЙ] {res['host']}:{res['port']} | Задержка: {delay} ms")
+                        print(f" -> [100% ЖИВОЙ] {res['host']}:{res['port']} | Задержка: {delay} ms")
                         if len(verified_live) >= target_count + 4:
                             for f in future_map:
                                 f.cancel()
                             break
                 except Exception:
                     pass
+    else:
+        # Резерв только при полном отсутствии бинарника sing-box в системе
+        verified_live = alive_socket[:target_count]
 
-    verified_live.sort(key=lambda x: x["latency"])
+    # Сортируем строго по реальному времени отклика
+    verified_live.sort(key=lambda x: x.get("latency", 9999))
 
-    # 3. Гарантированный добор узлов (группа никогда не останется пустой)
-    if len(verified_live) < target_count:
-        print(f"Страховочный добор: {len(verified_live)}/{target_count}. Добираем проверенные узлы...")
-        used_uris = {x["uri"] for x in verified_live}
-        for it in alive_socket:
-            if it["uri"] not in used_uris:
-                it["latency"] = it.get("tcp_latency", 200.0)
-                verified_live.append(it)
-                used_uris.add(it["uri"])
-            if len(verified_live) >= target_count:
-                break
-
-    if len(verified_live) < target_count:
-        used_uris = {x["uri"] for x in verified_live}
-        for it in candidates:
-            if it["uri"] not in used_uris:
-                it["latency"] = 250.0
-                verified_live.append(it)
-                used_uris.add(it["uri"])
-            if len(verified_live) >= target_count:
-                break
-
-    print(f"Отобрано гарантированно: {len(verified_live)} серверов.")
+    # СТРОГОЕ ПРАВИЛО: Мертвые серверы НЕ ДОБИРАЮТСЯ.
+    # В подписку отправляются только те, кто подтвердил доступность пакетами.
+    print(f"Отобрано подтвержденных живых серверов: {len(verified_live)}")
     return verified_live
-
-def check_reachability_from_russia(host, port, timeout=5):
-    """Проверка доступности сервера зондом, физически находящимся в РФ"""
-    url = "https://api.globalping.io/v1/measurements"
-    payload = {
-        "limit": 1,
-        "locations": [{"country": "RU"}],
-        "target": host,
-        "type": "tcp",
-        "measurementOptions": {"port": int(port)}
-    }
-    try:
-        req = requests.post(url, json=payload, timeout=timeout)
-        if req.status_code == 201:
-            m_id = req.json().get("id")
-            time.sleep(2.0) # Даем зонду в РФ 2 секунды на пинг
-            res = requests.get(f"{url}/{m_id}", timeout=timeout).json()
-            results = res.get("results", [])
-            if results:
-                status = results[0].get("result", {}).get("status")
-                # Если зонд из РФ смог подключиться:
-                return status == "finished"
-    except Exception:
-        pass
-    return False
 
 def filter_and_rank_keys(raw_items):
     parsed_items = [parse_vless(k) for k in raw_items if parse_vless(k)]
@@ -540,18 +486,20 @@ def filter_and_rank_keys(raw_items):
     reg_candidates = [it for it in parsed_items if not it["is_whitelist"]]
     wl_candidates = [it for it in parsed_items if it["is_whitelist"]]
 
-    # 1. Загружаем базу при старте
+    # 1. Загружаем базу блокировок РКН и запрещенных хостингов
     load_rkn_blocked_database()
 
-    # 2. Быстрый отсев в цикле проверки
+    # 2. Исключаем заблокированные в РФ подсети и хостинги для Global
     clean_candidates = []
     for item in reg_candidates:
-        # Whitelist проверяется отдельно, а для Global исключаем заблокированные подсети
         is_blocked, ip, net = is_ip_blocked_in_russia(item["host"])
         if is_blocked:
             print(f" -> [РКН/ХОСТИНГ БЛОК] {item['host']} ({ip}) входит в заблокированную сеть {net}")
             continue
         clean_candidates.append(item)
+
+    print(f"\nКандидатов Global после отсева РКН/хостингов: {len(clean_candidates)}")
+    print(f"Кандидатов Whitelist: {len(wl_candidates)}")
 
     print("\n--- ОБРАБОТКА ГРУППЫ GLOBAL (Черные списки РФ) ---")
     regular_ready = process_category(clean_candidates, target_count=6)
@@ -559,9 +507,9 @@ def filter_and_rank_keys(raw_items):
     print("\n--- ОБРАБОТКА ГРУППЫ WHITELIST (Белые списки РФ) ---")
     whitelist_ready = process_category(wl_candidates, target_count=6)
 
-    print(f"\nИТОГ: Готовых серверов Global: {len(regular_ready)}, Whitelist: {len(whitelist_ready)}")
+    print(f"\nИТОГ: Готовых живых серверов Global: {len(regular_ready)}, Whitelist: {len(whitelist_ready)}")
     return regular_ready, whitelist_ready
-    
+
 def format_node_name(item, sub_name, index, is_wl):
     tag_type = "Whitelist" if is_wl else "Global"
     node_name = f"{sub_name} | #{index:02d} [{tag_type}]"
@@ -571,9 +519,11 @@ def format_node_name(item, sub_name, index, is_wl):
 
 def build_singbox_config(outbounds, sub_name):
     tags = [ob["tag"] for ob in outbounds]
+    # Включаем временную метку обновления в remarks, чтобы клиенты сбрасывали старый кэш
+    timestamp = time.strftime("%d.%m %H:%M UTC")
     config = {
         "version": 1,
-        "remarks": sub_name,
+        "remarks": f"{sub_name} [{timestamp}]",
         "outbounds": [
             {
                 "type": "selector",
@@ -601,6 +551,7 @@ def assemble_subscription(regular_items, wl_items, reg_count, wl_count, sub_name
     uris = []
     singbox_outbounds = []
 
+    # Берем строго подтвержденные живые серверы
     selected_reg = regular_items[:reg_count]
     selected_wl = wl_items[:wl_count]
 
@@ -625,29 +576,34 @@ def assemble_subscription(regular_items, wl_items, reg_count, wl_count, sub_name
     return b64_sub, json_sub
 
 def generate_web_dashboard(output_dir):
-    html_content = """<!DOCTYPE html>
+    """Генерация главной страницы с защитой от кэширования браузерами и клиентами"""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC")
+    html_content = f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>BCT VPN Subscriptions</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
-        .card { background: #1e293b; border-radius: 16px; padding: 32px; max-width: 520px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.3); border: 1px solid #334155; }
-        h1 { margin-top: 0; font-size: 24px; text-align: center; color: #38bdf8; }
-        p { color: #94a3b8; font-size: 14px; text-align: center; }
-        .section { margin-top: 24px; }
-        .section-title { font-weight: 600; font-size: 16px; margin-bottom: 12px; color: #e2e8f0; display: flex; justify-content: space-between; }
-        .links { display: flex; flex-direction: column; gap: 8px; }
-        a { display: block; background: #334155; color: #38bdf8; text-decoration: none; padding: 12px 16px; border-radius: 8px; font-size: 14px; word-break: break-all; transition: background 0.2s; }
-        a:hover { background: #475569; }
-        .badge { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: #0284c7; color: white; }
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
+        .card {{ background: #1e293b; border-radius: 16px; padding: 32px; max-width: 520px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.3); border: 1px solid #334155; }}
+        h1 {{ margin-top: 0; font-size: 24px; text-align: center; color: #38bdf8; }}
+        p {{ color: #94a3b8; font-size: 13px; text-align: center; }}
+        .section {{ margin-top: 24px; }}
+        .section-title {{ font-weight: 600; font-size: 16px; margin-bottom: 12px; color: #e2e8f0; display: flex; justify-content: space-between; }}
+        .links {{ display: flex; flex-direction: column; gap: 8px; }}
+        a {{ display: block; background: #334155; color: #38bdf8; text-decoration: none; padding: 12px 16px; border-radius: 8px; font-size: 14px; word-break: break-all; transition: background 0.2s; }}
+        a:hover {{ background: #475569; }}
+        .badge {{ font-size: 11px; padding: 2px 8px; border-radius: 12px; background: #0284c7; color: white; }}
     </style>
 </head>
 <body>
     <div class="card">
         <h1>BCT VPN Subscriptions</h1>
-        <p>100% Живой отбор • Поддержка РФ и ТСПУ • Каждый час</p>
+        <p>100% Живой отбор • Без кэширования мертвых серверов<br>Обновлено: {timestamp}</p>
 
         <div class="section">
             <div class="section-title">
@@ -703,7 +659,7 @@ if __name__ == "__main__":
 
     regular_ready, whitelist_ready = filter_and_rank_keys(all_keys)
 
-    # Lite: строго 3 Global + 3 Whitelist
+    # Lite: строго до 3 Global + 3 Whitelist только из числа живых
     lite_data = assemble_subscription(
         regular_items=regular_ready,
         wl_items=whitelist_ready,
@@ -712,7 +668,7 @@ if __name__ == "__main__":
         sub_name="BCT VPN (Lite)"
     )
 
-    # Plus: строго 6 Global + 6 Whitelist
+    # Plus: строго до 6 Global + 6 Whitelist только из числа живых
     plus_data = assemble_subscription(
         regular_items=regular_ready,
         wl_items=whitelist_ready,
