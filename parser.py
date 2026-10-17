@@ -43,6 +43,46 @@ BANNED_HOSTING_CIDRS = [
 
 SUBNETS_BY_OCTET = defaultdict(list)
 LOADED_BLOCKED_NETS = False
+GEO_CACHE = {}
+
+def get_geo_info(host):
+    """Определение страны и генерация флага-эмодзи по IP/домену"""
+    try:
+        ip = socket.gethostbyname(host)
+    except Exception:
+        return "🌐", "Unknown"
+
+    if ip in GEO_CACHE:
+        return GEO_CACHE[ip]
+
+    # Основной запрос через ip-api
+    try:
+        r = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,countryCode", timeout=2.5)
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("status") == "success":
+                cc = d.get("countryCode", "").upper()
+                country = d.get("country", cc)
+                flag = "".join(chr(ord(c) + 127397) for c in cc) if len(cc) == 2 else "🌐"
+                GEO_CACHE[ip] = (flag, country)
+                return GEO_CACHE[ip]
+    except Exception:
+        pass
+
+    # Резервный запрос через api.country.is
+    try:
+        r = requests.get(f"https://api.country.is/{ip}", timeout=2.5)
+        if r.status_code == 200:
+            cc = r.json().get("country", "").upper()
+            if len(cc) == 2:
+                flag = "".join(chr(ord(c) + 127397) for c in cc)
+                GEO_CACHE[ip] = (flag, cc)
+                return GEO_CACHE[ip]
+    except Exception:
+        pass
+
+    GEO_CACHE[ip] = ("🌐", "Unknown")
+    return GEO_CACHE[ip]
 
 def load_rkn_blocked_database():
     """Скачивает свежий дамп заблокированных подсетей РКН и запрещенных хостингов"""
@@ -468,14 +508,11 @@ def process_category(candidates, target_count=6, max_test=140):
                 except Exception:
                     pass
     else:
-        # Резерв только при полном отсутствии бинарника sing-box в системе
         verified_live = alive_socket[:target_count]
 
     # Сортируем строго по реальному времени отклика
     verified_live.sort(key=lambda x: x.get("latency", 9999))
 
-    # СТРОГОЕ ПРАВИЛО: Мертвые серверы НЕ ДОБИРАЮТСЯ.
-    # В подписку отправляются только те, кто подтвердил доступность пакетами.
     print(f"Отобрано подтвержденных живых серверов: {len(verified_live)}")
     return verified_live
 
@@ -512,14 +549,17 @@ def filter_and_rank_keys(raw_items):
 
 def format_node_name(item, sub_name, index, is_wl):
     tag_type = "Whitelist" if is_wl else "Global"
-    node_name = f"{sub_name} | #{index:02d} [{tag_type}]"
+    flag, country = get_geo_info(item["host"])
+    hour_tag = time.strftime("%d.%m")
+    
+    # Формат с флагом и страной: 🇩🇪 Germany | BCT VPN (Lite) | #01 [Global] (17.10)
+    node_name = f"{flag} {country} | {sub_name} | #{index:02d} [{tag_type}] ({hour_tag})"
     base_uri = item["uri"].split('#')[0]
     renamed_uri = f"{base_uri}#{quote(node_name)}"
     return renamed_uri, node_name
 
 def build_singbox_config(outbounds, sub_name):
     tags = [ob["tag"] for ob in outbounds]
-    # Включаем временную метку обновления в remarks, чтобы клиенты сбрасывали старый кэш
     timestamp = time.strftime("%d.%m %H:%M UTC")
     config = {
         "version": 1,
@@ -551,7 +591,6 @@ def assemble_subscription(regular_items, wl_items, reg_count, wl_count, sub_name
     uris = []
     singbox_outbounds = []
 
-    # Берем строго подтвержденные живые серверы
     selected_reg = regular_items[:reg_count]
     selected_wl = wl_items[:wl_count]
 
@@ -603,7 +642,7 @@ def generate_web_dashboard(output_dir):
 <body>
     <div class="card">
         <h1>BCT VPN Subscriptions</h1>
-        <p>100% Живой отбор • Без кэширования мертвых серверов<br>Обновлено: {timestamp}</p>
+        <p>100% Живой отбор • Флаги стран • Без кэширования мертвых серверов<br>Обновлено: {timestamp}</p>
 
         <div class="section">
             <div class="section-title">
