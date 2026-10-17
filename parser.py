@@ -7,9 +7,11 @@ import time
 import tempfile
 import subprocess
 from urllib.parse import urlparse, parse_qs
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import urllib3
+import ipaddress
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -20,33 +22,130 @@ MAX_STRICT_LATENCY_MS = 500.0   # СТРОГИЙ максимум: всё что
 RECOMMENDED_LATENCY_MS = 120.0  # Эталонная задержка (наивысший приоритет)
 
 # =====================================================================
-# ИСТОЧНИКИ ДЛЯ КАТЕГОРИИ GLOBAL (Черные списки РФ)
+# 1. ДИАПАЗОНЫ ЗАПРЕЩЕННЫХ В РФ ЗАРУБЕЖНЫХ ХОСТИНГОВ (406-ФЗ / РКН)
+# =====================================================================
+BANNED_HOSTING_CIDRS = [
+    # Hetzner
+    "78.46.0.0/15", "88.198.0.0/16", "94.130.0.0/16", "95.216.0.0/15",
+    "135.181.0.0/16", "138.201.0.0/16", "142.132.0.0/16", "144.76.0.0/16",
+    "159.69.0.0/16", "168.119.0.0/16", "195.201.0.0/16", "65.108.0.0/16",
+    "65.109.0.0/16", "49.12.0.0/16", "116.202.0.0/16", "116.203.0.0/16",
+    # DigitalOcean
+    "104.131.0.0/16", "104.248.0.0/16", "138.68.0.0/16", "142.93.0.0/16",
+    "143.198.0.0/16", "143.244.0.0/16", "157.230.0.0/16", "157.245.0.0/16",
+    "159.65.0.0/16", "159.89.0.0/16", "161.35.0.0/16", "164.90.0.0/16",
+    "164.92.0.0/16", "165.22.0.0/16", "165.227.0.0/16", "167.172.0.0/16",
+    "167.71.0.0/16", "167.99.0.0/16", "174.138.0.0/16", "178.62.0.0/16",
+    "188.166.0.0/16", "206.189.0.0/16", "46.101.0.0/16", "64.225.0.0/16",
+    # OVH
+    "51.0.0.0/8", "141.94.0.0/15", "146.59.0.0/16", "135.125.0.0/16",
+    "178.32.0.0/15", "188.165.0.0/16", "193.70.0.0/16", "37.59.0.0/16",
+    "46.105.0.0/16", "54.36.0.0/15", "57.128.0.0/16",
+    # Kamatera / Scaleway / Linode
+    "185.10.68.0/22", "185.16.38.0/23", "213.142.128.0/18",
+    "51.15.0.0/16", "163.172.0.0/16", "62.210.0.0/16", "139.162.0.0/16"
+]
+
+SUBNETS_BY_OCTET = defaultdict(list)
+LOADED_BLOCKED_NETS = False
+GEO_CACHE = {}
+
+def get_geo_info(host):
+    """Определение страны и флага-эмодзи по IP/домену"""
+    try:
+        ip = socket.gethostbyname(host)
+    except Exception:
+        return "🌐", "Unknown"
+
+    if ip in GEO_CACHE and "flag" in GEO_CACHE[ip]:
+        return GEO_CACHE[ip]["flag"], GEO_CACHE[ip]["country"]
+
+    try:
+        r = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,countryCode", timeout=2.5)
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("status") == "success":
+                cc = d.get("countryCode", "").upper()
+                country = d.get("country", cc)
+                flag = "".join(chr(ord(c) + 127397) for c in cc) if len(cc) == 2 else "🌐"
+                GEO_CACHE[ip] = {"flag": flag, "country": country, "asn_info": ""}
+                return flag, country
+    except Exception:
+        pass
+
+    return "🌐", "Unknown"
+
+def load_rkn_blocked_database():
+    """Скачивание дампов заблокированных подсетей РКН и запрещенных хостингов"""
+    global LOADED_BLOCKED_NETS
+    if LOADED_BLOCKED_NETS:
+        return
+
+    raw_subnets = list(BANNED_HOSTING_CIDRS)
+    sources = [
+        "https://antifilter.download/list/subnet.lst",
+        "https://raw.githubusercontent.com/eduard256/russia-blocked-ips/main/ip.txt"
+    ]
+
+    for url in sources:
+        try:
+            r = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                lines = r.text.splitlines()
+                valid_cidrs = [l.strip() for l in lines if "/" in l and not l.startswith("#")]
+                raw_subnets.extend(valid_cidrs)
+                print(f"[RKN-DB] Успешно загружен дамп {url}: добавлено {len(valid_cidrs)} подсетей")
+                break
+        except Exception as e:
+            print(f"[RKN-DB] Ошибка загрузки {url}: {e}")
+
+    count = 0
+    for cidr in raw_subnets:
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+            if isinstance(net, ipaddress.IPv4Network):
+                first_octet = int(str(net.network_address).split('.')[0])
+                SUBNETS_BY_OCTET[first_octet].append(net)
+                count += 1
+        except Exception:
+            continue
+
+    print(f"[RKN-DB] Итого проиндексировано {count} заблокированных подсетей в РФ.")
+    LOADED_BLOCKED_NETS = True
+
+def is_ip_blocked_in_russia(host):
+    """Локальная проверка IP-адреса хоста по базе блокировок РКН и хостеров"""
+    try:
+        ip_str = socket.gethostbyname(host)
+        ip_obj = ipaddress.ip_address(ip_str)
+        first_octet = int(ip_str.split('.')[0])
+
+        for net in SUBNETS_BY_OCTET.get(first_octet, []):
+            if ip_obj in net:
+                return True, ip_str, str(net)
+    except Exception:
+        pass
+    return False, None, None
+
+# =====================================================================
+# 2. ИСТОЧНИКИ ДЛЯ КАТЕГОРИЙ GLOBAL И WHITELIST (РАБОЧИЕ ССЫЛКИ)
 # =====================================================================
 GLOBAL_SOURCES = [
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
-    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/clean/vless.txt",
     "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/vless.txt",
-    "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/vless.txt"
+    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
 ]
 
-# =====================================================================
-# РАБОЧИЕ ИСТОЧНИКИ ДЛЯ КАТЕГОРИИ WHITELIST (Белые списки РФ)
-# =====================================================================
 WHITELIST_SOURCES = [
     "https://raw.githubusercontent.com/zieng2/wl/master/vless_universal.txt",
     "https://raw.githubusercontent.com/zieng2/wl/master/vless_lite.txt",
-    "https://raw.githubusercontent.com/zieng2/wl/master/list_universal.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE_VLESS_RUS.txt",
-    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/whitelist.txt",
-    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/whitelist/vless.txt",
-    "https://gitverse.ru/api/repos/zieng2/wl/raw/branch/master/list_universal.txt"
+    "https://gitlab.com/zieng2/wl/raw/main/vless_universal.txt"
 ]
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
 
-# Ключевые слова запрещенных и коврово блокируемых ТСПУ дата-центров
 BANNED_ASN_KEYWORDS = (
     "hetzner", "ovh", "digitalocean", "linode", "akamai", "vultr",
     "choopa", "constant company", "scaleway", "oracle", "amazon",
@@ -59,8 +158,6 @@ BLOCKED_SNI_IN_RU = (
     "rutracker", "meduza", "bbc", "dw.com", "svoboda", "navalny",
     "pornhub", "linkedin", "t.me", "telegram"
 )
-
-GEO_CACHE = {}
 
 def get_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -147,7 +244,6 @@ def parse_vless(raw_item):
 
         target = sni or host or parsed.hostname.lower()
 
-        # Фильтрация для Global под ТСПУ
         if not is_whitelist:
             if any(b in target for b in BLOCKED_SNI_IN_RU):
                 return None
@@ -167,27 +263,32 @@ def parse_vless(raw_item):
     except Exception:
         return None
 
-def batch_enrich_and_filter(candidates, is_global=True):
+def resolve_single_host(it):
+    try:
+        ip = socket.gethostbyname(it["host"])
+        it["ip"] = ip
+        return it
+    except Exception:
+        return None
+
+def batch_enrich_and_filter(candidates, is_global=True, max_candidates=160):
     """
-    Пакетный резолв и проверка автономных систем хостингов через ip-api batch (до 100 IP за 1 запрос).
-    Отсеивает заблокированные в РФ дата-центры и сразу определяет флаг и страну.
+    Параллельный DNS-резолв пула кандидатов и пакетное определение хостинга/ASN.
     """
+    pool = candidates[:max_candidates]
     resolved_candidates = []
-    ip_to_hosts = defaultdict(list)
 
-    for it in candidates:
-        try:
-            ip = socket.gethostbyname(it["host"])
-            it["ip"] = ip
-            ip_to_hosts[ip].append(it)
-            resolved_candidates.append(it)
-        except Exception:
-            continue
+    with ThreadPoolExecutor(max_workers=30) as executor:
+        futures = [executor.submit(resolve_single_host, it) for it in pool]
+        for fut in as_completed(futures):
+            res = fut.result()
+            if res:
+                resolved_candidates.append(res)
 
-    unique_ips = list(ip_to_hosts.keys())
+    unique_ips = list({it["ip"] for it in resolved_candidates if it.get("ip")})
     missing_ips = [ip for ip in unique_ips if ip not in GEO_CACHE]
 
-    # Запрашиваем пачками по 100 штук
+    # Пакетный запрос гео-данных пачками по 100 IP
     for i in range(0, len(missing_ips), 100):
         chunk = missing_ips[i:i+100]
         try:
@@ -212,7 +313,6 @@ def batch_enrich_and_filter(candidates, is_global=True):
     if not is_global:
         return resolved_candidates
 
-    # Для Global удаляем заблокированные хостинги (Hetzner, OVH, DigitalOcean и др.)
     clean_candidates = []
     blocked_count = 0
     for it in resolved_candidates:
@@ -223,7 +323,7 @@ def batch_enrich_and_filter(candidates, is_global=True):
             continue
         clean_candidates.append(it)
 
-    print(f"[ASN-Фильтр] Отсеяно заблокированных в РФ дата-центров: {blocked_count}. Осталось чистых: {len(clean_candidates)}")
+    print(f"[ASN-Фильтр] Отсеяно заблокированных в РФ дата-центров: {blocked_count}. Отобрано чистых хостов: {len(clean_candidates)}")
     return clean_candidates
 
 def check_tcp_socket(item, timeout=1.8):
@@ -263,7 +363,7 @@ def convert_to_singbox_outbound(item, tag_name):
         "network": "tcp"
     }
 
-    # Flow xtls-rprx-vision допустим строго для TCP. В WS/gRPC он ломает клиент V2RayTun
+    # Flow xtls-rprx-vision допустим строго для TCP
     if flow in ["xtls-rprx-vision", "xtls-rprx-vision-udp443"] and net in ["tcp", ""] and sec in ["tls", "reality"]:
         outbound["flow"] = flow
 
@@ -304,7 +404,7 @@ def convert_to_singbox_outbound(item, tag_name):
     return outbound
 
 def test_vless_live(item, timeout=3.5):
-    """Запуск sing-box и проверка реального интернет-трафика через curl"""
+    """Живой замер трафика через sing-box с помощью curl"""
     if not os.path.exists("./sing-box"):
         return None
 
@@ -352,7 +452,7 @@ def test_vless_live(item, timeout=3.5):
         if not ready:
             return None
 
-        # Точно такие же проверочные адреса, как в Real Delay Test V2RayTun
+        # Точки тестирования: для Whitelist — ya.ru/vk.com/cloudflare, для Global — gstatic/cloudflare
         if item["is_whitelist"]:
             endpoints = ["https://ya.ru", "https://vk.com", "https://cp.cloudflare.com/generate_204"]
         else:
@@ -398,12 +498,11 @@ def test_vless_live(item, timeout=3.5):
 
     return None
 
-def process_category(candidates, target_count=6, max_test=160):
+def process_category(candidates, target_count=6, max_test=140):
     print(f"\nКандидатов на входе: {len(candidates)}")
     if not candidates:
         return []
 
-    # Дедупликация
     unique_candidates = []
     seen_eps = set()
     for it in candidates:
@@ -414,7 +513,6 @@ def process_category(candidates, target_count=6, max_test=160):
 
     print(f"Уникальных адресов серверов: {len(unique_candidates)}")
 
-    # 1. Сокет-тест
     alive_socket = []
     with ThreadPoolExecutor(max_workers=40) as executor:
         futures = [executor.submit(check_tcp_socket, it) for it in unique_candidates]
@@ -425,7 +523,6 @@ def process_category(candidates, target_count=6, max_test=160):
 
     print(f"Ответили на TCP-сокет (<=500ms): {len(alive_socket)} серверов.")
 
-    # 2. Живой тест
     pool = alive_socket[:max_test] if alive_socket else unique_candidates[:max_test]
     verified_live = []
 
@@ -445,7 +542,6 @@ def process_category(candidates, target_count=6, max_test=160):
                             else:
                                 print(f" -> [✓ <=500ms] {res['host']}:{res['port']} | Задержка: {int(delay)} ms")
 
-                        # Завершаем при наборе с запасом для лучшей сортировки
                         if len(verified_live) >= target_count + 8:
                             for f in future_map:
                                 f.cancel()
@@ -455,7 +551,7 @@ def process_category(candidates, target_count=6, max_test=160):
 
     verified_live.sort(key=lambda x: x.get("latency", 9999))
 
-    # 3. Гарантированный добор до target_count (только узлы <= 500ms)
+    # Гарантированный добор серверов со строгим лимитом <= 500ms
     if len(verified_live) < target_count:
         print(f"Добор до нормы ({len(verified_live)}/{target_count}) из проверенных сокетов...")
         used_eps = {f"{x['host']}:{x['port']}" for x in verified_live}
@@ -490,12 +586,13 @@ def filter_and_rank_keys(raw_items):
     reg_raw = [it for it in parsed_items if not it["is_whitelist"]]
     wl_raw = [it for it in parsed_items if it["is_whitelist"]]
 
-    # Пакетное гео-обогащение и фильтрация запрещенных ТСПУ хостингов
+    load_rkn_blocked_database()
+
     print("\n--- ФИЛЬТРАЦИЯ И АНАЛИЗ ХОСТИНГОВ GLOBAL ---")
-    clean_global = batch_enrich_and_filter(reg_raw, is_global=True)
+    clean_global = batch_enrich_and_filter(reg_raw, is_global=True, max_candidates=250)
 
     print("\n--- АНАЛИЗ ХОСТИНГОВ WHITELIST ---")
-    clean_whitelist = batch_enrich_and_filter(wl_raw, is_global=False)
+    clean_whitelist = batch_enrich_and_filter(wl_raw, is_global=False, max_candidates=250)
 
     print("\n--- ОБРАБОТКА ГРУППЫ GLOBAL ---")
     regular_ready = process_category(clean_global, target_count=6)
@@ -507,20 +604,15 @@ def filter_and_rank_keys(raw_items):
     return regular_ready, whitelist_ready
 
 def sanitize_vless_uri(uri, new_name):
-    """
-    Очистка VLESS URI от конфликтующих параметров (например, flow на websocket)
-    и установка читаемого названия узла без лишнего экранирования
-    """
+    """Очистка VLESS URI от конфликтующих параметров flow и установка читаемого имени"""
     base = uri.split('#')[0]
     p = urlparse(base)
     q = parse_qs(p.query)
 
     net = q.get("type", ["tcp"])[0].lower()
-    # Если транспорт не tcp, удаляем flow, иначе V2RayTun выдает ошибку
     if net not in ["tcp", ""] and "flow" in q:
         del q["flow"]
 
-    # Пересобираем query
     query_parts = []
     for k, vals in q.items():
         for v in vals:
@@ -574,7 +666,6 @@ def assemble_subscription(regular_items, wl_items, reg_count, wl_count, sub_name
     uris = []
     singbox_outbounds = []
 
-    # Строго заданное количество
     selected_reg = regular_items[:reg_count]
     selected_wl = wl_items[:wl_count]
 
