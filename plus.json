@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "remarks": "BCT VPN (Plus) [17.10 16:51 UTC]",
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Auto / Select (BCT VPN (Plus))",
+      "outbounds": [
+        "urltest",
+        "BCT VPN (Plus) | #01 [Global]",
+        "BCT VPN (Plus) | #02 [Global]",
+        "BCT VPN (Plus) | #03 [Global]",
+        "BCT VPN (Plus) | #04 [Global]",
+        "BCT VPN (Plus) | #05 [Global]",
+        "BCT VPN (Plus) | #06 [Global]",
+        "BCT VPN (Plus) | #01 [Whitelist]"
+      ],
+      "default": "urltest"
+    },
+    {
+      "type": "urltest",
+      "tag": "urltest",
+      "outbounds": [
+        "BCT VPN (Plus) | #01 [Global]",
+        "BCT VPN (Plus) | #02 [Global]",
+        "BCT VPN (Plus) | #03 [Global]",
+        "BCT VPN (Plus) | #04 [Global]",
+        "BCT VPN (Plus) | #05 [Global]",
+        "BCT VPN (Plus) | #06 [Global]",
+        "BCT VPN (Plus) | #01 [Whitelist]"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "3m",
+      "tolerance": 50
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "vless",
+      "tag": "BCT VPN (Plus) | #01 [Global]",
+      "server": "188.164.248.216",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "ios"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "BCT VPN (Plus) | #02 [Global]",
+      "server": "188.164.248.216",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "BCT VPN (Plus) | #03 [Global]",
+      "server": "188.164.248.216",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "BCT VPN (Plus) | #04 [Global]",
+      "server": "188.164.248.216",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "edge"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "BCT VPN (Plus) | #05 [Global]",
+      "server": "188.164.248.216",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "android"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "BCT VPN (Plus) | #06 [Global]",
+      "server": "188.164.248.216",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "ios"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/fp=chrome",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "BCT VPN (Plus) | #01 [Whitelist]",
+      "server": "87.242.95.164",
+      "server_port": 9443,
+      "uuid": "08bb013c-d658-4a14-b024-9988bcf3c072",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "passport.yandex.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "qq"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "9YcV-gA7iaXFnI0HXQa624OIqm4zxO_U2eMCWXQAiCQ",
+          "short_id": "8375b32501373f41"
+        }
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "grpc"
+      }
+    }
+  ]
+}
