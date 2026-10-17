@@ -128,20 +128,40 @@ def is_ip_blocked_in_russia(host):
     return False, None, None
 
 # =====================================================================
-# 2. ИСТОЧНИКИ ДЛЯ КАТЕГОРИЙ GLOBAL И WHITELIST (РАБОЧИЕ ССЫЛКИ)
+# 2. РАСШИРЕННЫЕ И ПРОВЕРЕННЫЕ ИСТОЧНИКИ ДЛЯ КАТЕГОРИИ GLOBAL
 # =====================================================================
 GLOBAL_SOURCES = [
+    # Базы под РФ (мобильные + стационарные провайдеры)
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
+    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/BLACK_VLESS_RUS_mobile.txt",
+    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/BLACK_VLESS_RUS.txt",
+    # Крупные базы VLESS (подлежат жесткой фильтрации ТСПУ/ASN в скрипте)
     "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/vless.txt",
-    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
+    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
+    "https://raw.githubusercontent.com/LalatinaHub/Mineral/master/result/nodes",
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/vless",
+    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless",
+    "https://raw.githubusercontent.com/MrPooyaX/Vplayerconfigs/main/Splited_By_Protocol/vless.txt"
 ]
 
+# =====================================================================
+# 3. РАСШИРЕННЫЕ И ПРОВЕРЕННЫЕ ИСТОЧНИКИ ДЛЯ КАТЕГОРИИ WHITELIST
+# =====================================================================
 WHITELIST_SOURCES = [
+    # zieng2/wl (GitHub master/main + резервы GitLab и Codeberg)
     "https://raw.githubusercontent.com/zieng2/wl/master/vless_universal.txt",
     "https://raw.githubusercontent.com/zieng2/wl/master/vless_lite.txt",
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt",
+    "https://gitlab.com/zieng2/wl/raw/main/vless_universal.txt",
+    "https://gitlab.com/zieng2/wl/raw/main/vless_lite.txt",
+    "https://codeberg.org/zieng2/wl/raw/branch/main/vless_universal.txt",
+    "https://codeberg.org/zieng2/wl/raw/branch/main/vless_lite.txt",
+    # igareck (белые списки РФ + мобильные профили)
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-    "https://gitlab.com/zieng2/wl/raw/main/vless_universal.txt"
+    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/whitelist.txt"
 ]
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
@@ -271,14 +291,15 @@ def resolve_single_host(it):
     except Exception:
         return None
 
-def batch_enrich_and_filter(candidates, is_global=True, max_candidates=160):
+def batch_enrich_and_filter(candidates, is_global=True, max_candidates=400):
     """
     Параллельный DNS-резолв пула кандидатов и пакетное определение хостинга/ASN.
+    Лимит увеличен до 400 кандидатов для максимального охвата живых узлов.
     """
     pool = candidates[:max_candidates]
     resolved_candidates = []
 
-    with ThreadPoolExecutor(max_workers=30) as executor:
+    with ThreadPoolExecutor(max_workers=35) as executor:
         futures = [executor.submit(resolve_single_host, it) for it in pool]
         for fut in as_completed(futures):
             res = fut.result()
@@ -288,7 +309,6 @@ def batch_enrich_and_filter(candidates, is_global=True, max_candidates=160):
     unique_ips = list({it["ip"] for it in resolved_candidates if it.get("ip")})
     missing_ips = [ip for ip in unique_ips if ip not in GEO_CACHE]
 
-    # Пакетный запрос гео-данных пачками по 100 IP
     for i in range(0, len(missing_ips), 100):
         chunk = missing_ips[i:i+100]
         try:
@@ -363,7 +383,6 @@ def convert_to_singbox_outbound(item, tag_name):
         "network": "tcp"
     }
 
-    # Flow xtls-rprx-vision допустим строго для TCP
     if flow in ["xtls-rprx-vision", "xtls-rprx-vision-udp443"] and net in ["tcp", ""] and sec in ["tls", "reality"]:
         outbound["flow"] = flow
 
@@ -452,7 +471,6 @@ def test_vless_live(item, timeout=3.5):
         if not ready:
             return None
 
-        # Точки тестирования: для Whitelist — ya.ru/vk.com/cloudflare, для Global — gstatic/cloudflare
         if item["is_whitelist"]:
             endpoints = ["https://ya.ru", "https://vk.com", "https://cp.cloudflare.com/generate_204"]
         else:
@@ -498,7 +516,11 @@ def test_vless_live(item, timeout=3.5):
 
     return None
 
-def process_category(candidates, target_count=6, max_test=140):
+def process_category(candidates, target_count=6, max_test=220):
+    """
+    Отбор серверов: пул живых проверок расширен до 220 узлов.
+    Строгий лимит <= 500ms, эталонная сортировка по <= 120ms.
+    """
     print(f"\nКандидатов на входе: {len(candidates)}")
     if not candidates:
         return []
@@ -542,7 +564,7 @@ def process_category(candidates, target_count=6, max_test=140):
                             else:
                                 print(f" -> [✓ <=500ms] {res['host']}:{res['port']} | Задержка: {int(delay)} ms")
 
-                        if len(verified_live) >= target_count + 8:
+                        if len(verified_live) >= target_count + 10:
                             for f in future_map:
                                 f.cancel()
                             break
@@ -589,16 +611,16 @@ def filter_and_rank_keys(raw_items):
     load_rkn_blocked_database()
 
     print("\n--- ФИЛЬТРАЦИЯ И АНАЛИЗ ХОСТИНГОВ GLOBAL ---")
-    clean_global = batch_enrich_and_filter(reg_raw, is_global=True, max_candidates=250)
+    clean_global = batch_enrich_and_filter(reg_raw, is_global=True, max_candidates=400)
 
     print("\n--- АНАЛИЗ ХОСТИНГОВ WHITELIST ---")
-    clean_whitelist = batch_enrich_and_filter(wl_raw, is_global=False, max_candidates=250)
+    clean_whitelist = batch_enrich_and_filter(wl_raw, is_global=False, max_candidates=400)
 
     print("\n--- ОБРАБОТКА ГРУППЫ GLOBAL ---")
-    regular_ready = process_category(clean_global, target_count=6)
+    regular_ready = process_category(clean_global, target_count=6, max_test=220)
 
     print("\n--- ОБРАБОТКА ГРУППЫ WHITELIST ---")
-    whitelist_ready = process_category(clean_whitelist, target_count=6)
+    whitelist_ready = process_category(clean_whitelist, target_count=6, max_test=220)
 
     print(f"\nИТОГ: Готовых живых Global: {len(regular_ready)}, Whitelist: {len(whitelist_ready)}")
     return regular_ready, whitelist_ready
@@ -772,7 +794,7 @@ if __name__ == "__main__":
 
     regular_ready, whitelist_ready = filter_and_rank_keys(all_keys)
 
-    # Lite: ровно 3 Global + 3 Whitelist
+    # Lite: строго 3 Global + 3 Whitelist
     lite_data = assemble_subscription(
         regular_items=regular_ready,
         wl_items=whitelist_ready,
@@ -781,7 +803,7 @@ if __name__ == "__main__":
         sub_name="BCT VPN (Lite)"
     )
 
-    # Plus: ровно 6 Global + 6 Whitelist
+    # Plus: строго 6 Global + 6 Whitelist
     plus_data = assemble_subscription(
         regular_items=regular_ready,
         wl_items=whitelist_ready,
