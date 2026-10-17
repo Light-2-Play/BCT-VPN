@@ -6,6 +6,7 @@ import socket
 import time
 import tempfile
 import subprocess
+from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,8 +23,32 @@ MAX_STRICT_LATENCY_MS = 500.0   # СТРОГИЙ максимум: всё что
 RECOMMENDED_LATENCY_MS = 120.0  # Эталонная задержка (наивысший приоритет)
 
 # =====================================================================
-# 1. ДИАПАЗОНЫ ЗАПРЕЩЕННЫХ В РФ ЗАРУБЕЖНЫХ ХОСТИНГОВ (406-ФЗ / РКН)
+# 1. ЗАПРЕЩЕННЫЕ SNI И ХОСТИНГИ В РФ (ТСПУ / 406-ФЗ)
 # =====================================================================
+BLOCKED_SNI_IN_RU = (
+    # Заблокированные соцсети и мессенджеры
+    "instagram", "cdninstagram", "facebook", "fbcdn", "twitter", "twimg",
+    "x.com", "threads.net", "meta.com", "messenger.com", "discord",
+    "discordapp", "discord.gg", "signal.org", "linkedin", "licdn",
+    "t.me", "telegram",
+    # Торренты и трекеры
+    "rutracker", "rutor", "kinozal", "flibusta", "nnmclub",
+    # Заблокированные СМИ
+    "meduza", "bbc.com", "bbc.co.uk", "dw.com", "svoboda", "rferl",
+    "theins", "zona.media", "navalny", "novayagazeta", "doxa", "currenttime",
+    # Инструменты обхода и форумы
+    "torproject", "ntc.party",
+    # Adult ресурсы
+    "pornhub", "xvideos", "xnxx", "bongacams"
+)
+
+BANNED_ASN_KEYWORDS = (
+    "hetzner", "ovh", "digitalocean", "linode", "akamai", "vultr",
+    "choopa", "constant company", "scaleway", "oracle", "amazon",
+    "aws", "azure", "microsoft", "google", "cloudflare", "fastly",
+    "mci.ir", "irancell", "arvancloud", "leaseweb"
+)
+
 BANNED_HOSTING_CIDRS = [
     # Hetzner
     "78.46.0.0/15", "88.198.0.0/16", "94.130.0.0/16", "95.216.0.0/15",
@@ -46,12 +71,83 @@ BANNED_HOSTING_CIDRS = [
     "51.15.0.0/16", "163.172.0.0/16", "62.210.0.0/16", "139.162.0.0/16"
 ]
 
+# =====================================================================
+# 2. ИСТОЧНИКИ ДЛЯ КАТЕГОРИЙ GLOBAL И WHITELIST
+# =====================================================================
+GLOBAL_SOURCES = [
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
+    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/BLACK_VLESS_RUS_mobile.txt",
+    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/BLACK_VLESS_RUS.txt",
+    "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/vless.txt",
+    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
+    "https://raw.githubusercontent.com/LalatinaHub/Mineral/master/result/nodes",
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/vless",
+    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless",
+    "https://raw.githubusercontent.com/roosterkid/openproxylist/main/VLESS_RAW.txt",
+    "https://raw.githubusercontent.com/Leon406/SubCrawler/main/sub/share/vless"
+]
+
+WHITELIST_SOURCES = [
+    "https://raw.githubusercontent.com/zieng2/wl/master/vless_universal.txt",
+    "https://raw.githubusercontent.com/zieng2/wl/master/vless_lite.txt",
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt",
+    "https://gitlab.com/zieng2/wl/raw/main/vless_universal.txt",
+    "https://gitlab.com/zieng2/wl/raw/main/vless_lite.txt",
+    "https://codeberg.org/zieng2/wl/raw/branch/main/vless_universal.txt",
+    "https://codeberg.org/zieng2/wl/raw/branch/main/vless_lite.txt",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus.txt",
+    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/whitelist.txt",
+    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/vless.txt"
+]
+
+VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
+
 SUBNETS_BY_OCTET = defaultdict(list)
 LOADED_BLOCKED_NETS = False
 GEO_CACHE = {}
 
+def extract_dates_from_text(text):
+    """Извлекает кортежи (год, месяц, день) из строки с фильтрацией версий софта"""
+    dates = []
+    # YYYY-MM-DD или YYYY.MM.DD
+    for m in re.finditer(r'\b(202\d)[-/.](0?[1-9]|1[0-2])[-/.](0?[1-9]|[12]\d|3[01])\b', text):
+        dates.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
+    # DD.MM.YYYY или DD-MM-YYYY
+    for m in re.finditer(r'\b(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])[-/.](202\d)\b', text):
+        dates.append((int(m.group(3)), int(m.group(2)), int(m.group(1))))
+    # DD.MM или DD-MM или DD/MM (исключая v1.2 и IP)
+    for m in re.finditer(r'(?<![vV\d])(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])(?![.\d])', text):
+        dates.append((None, int(m.group(2)), int(m.group(1))))
+    return dates
+
+def is_item_added_today(key_uri, is_source_today):
+    """
+    Проверяет, добавлен ли ключ сегодня:
+    - Если в названии указана дата прошлых дней — отсеивает ключ.
+    - Если в названии дата сегодняшнего дня — подтверждает актуальность.
+    - Если даты в названии нет — сверяет актуальность самого источника.
+    """
+    now = datetime.now(timezone.utc)
+    fragment = urlparse(key_uri).fragment
+    name = requests.utils.unquote(fragment) if fragment else ""
+
+    dates = extract_dates_from_text(name)
+    if dates:
+        for y, m, d in dates:
+            if y is not None and y != now.year:
+                return False
+            if m != now.month or d != now.day:
+                return False
+        return True
+
+    return is_source_today
+
 def get_geo_info(host):
-    """Определение страны и флага-эмодзи по IP/домену"""
+    """Определение страны и флага по IP/домену"""
     try:
         ip = socket.gethostbyname(host)
     except Exception:
@@ -76,7 +172,7 @@ def get_geo_info(host):
     return "🌐", "Unknown"
 
 def load_rkn_blocked_database():
-    """Скачивание дампов заблокированных подсетей РКН и запрещенных хостингов"""
+    """Локальная загрузка заблокированных подсетей РКН"""
     global LOADED_BLOCKED_NETS
     if LOADED_BLOCKED_NETS:
         return
@@ -94,7 +190,7 @@ def load_rkn_blocked_database():
                 lines = r.text.splitlines()
                 valid_cidrs = [l.strip() for l in lines if "/" in l and not l.startswith("#")]
                 raw_subnets.extend(valid_cidrs)
-                print(f"[RKN-DB] Успешно загружен дамп {url}: добавлено {len(valid_cidrs)} подсетей")
+                print(f"[RKN-DB] Загружен дамп {url}: добавлено {len(valid_cidrs)} подсетей")
                 break
         except Exception as e:
             print(f"[RKN-DB] Ошибка загрузки {url}: {e}")
@@ -110,11 +206,11 @@ def load_rkn_blocked_database():
         except Exception:
             continue
 
-    print(f"[RKN-DB] Итого проиндексировано {count} заблокированных подсетей в РФ.")
+    print(f"[RKN-DB] Проиндексировано {count} заблокированных подсетей в РФ.")
     LOADED_BLOCKED_NETS = True
 
 def is_ip_blocked_in_russia(host):
-    """Локальная проверка IP-адреса хоста по базе блокировок РКН и хостеров"""
+    """Мгновенный локальный поиск IP по структуре заблокированных подсетей"""
     try:
         ip_str = socket.gethostbyname(host)
         ip_obj = ipaddress.ip_address(ip_str)
@@ -126,58 +222,6 @@ def is_ip_blocked_in_russia(host):
     except Exception:
         pass
     return False, None, None
-
-# =====================================================================
-# 2. РАСШИРЕННЫЕ И ПРОВЕРЕННЫЕ ИСТОЧНИКИ ДЛЯ КАТЕГОРИИ GLOBAL
-# =====================================================================
-GLOBAL_SOURCES = [
-    # Базы под РФ (мобильные + стационарные провайдеры)
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
-    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/BLACK_VLESS_RUS_mobile.txt",
-    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/BLACK_VLESS_RUS.txt",
-    # Крупные базы VLESS (подлежат жесткой фильтрации ТСПУ/ASN в скрипте)
-    "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/vless.txt",
-    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
-    "https://raw.githubusercontent.com/LalatinaHub/Mineral/master/result/nodes",
-    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/vless",
-    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless",
-    "https://raw.githubusercontent.com/MrPooyaX/Vplayerconfigs/main/Splited_By_Protocol/vless.txt"
-]
-
-# =====================================================================
-# 3. РАСШИРЕННЫЕ И ПРОВЕРЕННЫЕ ИСТОЧНИКИ ДЛЯ КАТЕГОРИИ WHITELIST
-# =====================================================================
-WHITELIST_SOURCES = [
-    # zieng2/wl (GitHub master/main + резервы GitLab и Codeberg)
-    "https://raw.githubusercontent.com/zieng2/wl/master/vless_universal.txt",
-    "https://raw.githubusercontent.com/zieng2/wl/master/vless_lite.txt",
-    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
-    "https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt",
-    "https://gitlab.com/zieng2/wl/raw/main/vless_universal.txt",
-    "https://gitlab.com/zieng2/wl/raw/main/vless_lite.txt",
-    "https://codeberg.org/zieng2/wl/raw/branch/main/vless_universal.txt",
-    "https://codeberg.org/zieng2/wl/raw/branch/main/vless_lite.txt",
-    # igareck (белые списки РФ + мобильные профили)
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/whitelist.txt"
-]
-
-VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
-
-BANNED_ASN_KEYWORDS = (
-    "hetzner", "ovh", "digitalocean", "linode", "akamai", "vultr",
-    "choopa", "constant company", "scaleway", "oracle", "amazon",
-    "aws", "azure", "microsoft", "google", "cloudflare", "fastly",
-    "mci.ir", "irancell", "arvancloud", "leaseweb"
-)
-
-BLOCKED_SNI_IN_RU = (
-    "instagram", "facebook", "twitter", "x.com", "threads", "meta.com",
-    "rutracker", "meduza", "bbc", "dw.com", "svoboda", "navalny",
-    "pornhub", "linkedin", "t.me", "telegram"
-)
 
 def get_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -225,18 +269,39 @@ def fetch_group_keys(sources, is_whitelist_group):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     group_name = "Whitelist" if is_whitelist_group else "Global"
+    now = datetime.now(timezone.utc)
 
     for url in sources:
         try:
             resp = requests.get(url, headers=headers, timeout=10, verify=False)
             if resp.status_code == 200:
+                # 1. Проверяем свежесть источника
+                last_mod = resp.headers.get("Last-Modified", "")
+                expected_date = now.strftime("%d %b %Y")
+                is_source_today = expected_date in last_mod if last_mod else False
+
+                if not is_source_today:
+                    head_text = "\n".join(resp.text.splitlines()[:50])
+                    source_dates = extract_dates_from_text(head_text)
+                    if source_dates:
+                        for y, m, d in source_dates:
+                            if (y is None or y == now.year) and m == now.month and d == now.day:
+                                is_source_today = True
+                                break
+                    else:
+                        is_source_today = True
+
                 keys = extract_vless_keys(resp.text)
-                if keys:
-                    print(f"[{group_name}] {url} -> найдено: {len(keys)}")
-                    for k in keys:
+                fresh_keys = [k for k in keys if is_item_added_today(k, is_source_today)]
+
+                if fresh_keys:
+                    print(f"[{group_name}] {url} -> получено: {len(keys)} (актуальных на сегодня: {len(fresh_keys)})")
+                    for k in fresh_keys:
                         if k not in seen:
                             seen.add(k)
                             items.append({"uri": k, "is_whitelist": is_whitelist_group})
+                else:
+                    print(f"[{group_name}] {url} -> пропущено: нет ключей за сегодняшний день")
             else:
                 print(f"[{group_name}] {url} -> код {resp.status_code}")
         except Exception as e:
@@ -262,11 +327,13 @@ def parse_vless(raw_item):
         sec = query.get("security", ["none"])[0].lower()
         pbk = query.get("pbk", [""])[0]
 
-        target = sni or host or parsed.hostname.lower()
+        # СТРОГАЯ ФИЛЬТРАЦИЯ ЗАПРЕЩЕННЫХ SNI (ДЛЯ GLOBAL И WHITELIST)
+        target_domains = [sni, host, parsed.hostname.lower()]
+        for d in target_domains:
+            if d and any(b in d for b in BLOCKED_SNI_IN_RU):
+                return None
 
         if not is_whitelist:
-            if any(b in target for b in BLOCKED_SNI_IN_RU):
-                return None
             if sec not in ["reality", "tls"]:
                 return None
             if sec == "reality" and not pbk:
@@ -292,10 +359,7 @@ def resolve_single_host(it):
         return None
 
 def batch_enrich_and_filter(candidates, is_global=True, max_candidates=400):
-    """
-    Параллельный DNS-резолв пула кандидатов и пакетное определение хостинга/ASN.
-    Лимит увеличен до 400 кандидатов для максимального охвата живых узлов.
-    """
+    """Параллельный DNS-резолв и пакетное определение хостинга/ASN"""
     pool = candidates[:max_candidates]
     resolved_candidates = []
 
@@ -471,6 +535,7 @@ def test_vless_live(item, timeout=3.5):
         if not ready:
             return None
 
+        # Точки тестирования: Whitelist -> ya.ru/vk.com/cloudflare, Global -> gstatic/cloudflare
         if item["is_whitelist"]:
             endpoints = ["https://ya.ru", "https://vk.com", "https://cp.cloudflare.com/generate_204"]
         else:
@@ -518,7 +583,7 @@ def test_vless_live(item, timeout=3.5):
 
 def process_category(candidates, target_count=6, max_test=220):
     """
-    Отбор серверов: пул живых проверок расширен до 220 узлов.
+    Отбор серверов: пул живых проверок до 220 узлов.
     Строгий лимит <= 500ms, эталонная сортировка по <= 120ms.
     """
     print(f"\nКандидатов на входе: {len(candidates)}")
@@ -603,7 +668,7 @@ def process_category(candidates, target_count=6, max_test=220):
 
 def filter_and_rank_keys(raw_items):
     parsed_items = [parse_vless(k) for k in raw_items if parse_vless(k)]
-    print(f"Корректно распарсено: {len(parsed_items)} ключей.")
+    print(f"Корректно распарсено (с фильтрацией SNI): {len(parsed_items)} ключей.")
 
     reg_raw = [it for it in parsed_items if not it["is_whitelist"]]
     wl_raw = [it for it in parsed_items if it["is_whitelist"]]
@@ -738,7 +803,7 @@ def generate_web_dashboard(output_dir):
 <body>
     <div class="card">
         <h1>BCT VPN Subscriptions</h1>
-        <p>100% Живой отбор • Задержка строго &le; 500ms • Эталон &le; 120ms<br>Обновлено: {timestamp}</p>
+        <p>100% Живой отбор • Ключи за сегодня • Фильтрация SNI • Задержка &le; 500ms<br>Обновлено: {timestamp}</p>
 
         <div class="section">
             <div class="section-title">
@@ -790,7 +855,7 @@ if __name__ == "__main__":
     wl_keys = fetch_group_keys(WHITELIST_SOURCES, is_whitelist_group=True)
 
     all_keys = global_keys + wl_keys
-    print(f"\nВсего в базе: {len(all_keys)} ключей (Global: {len(global_keys)}, Whitelist: {len(wl_keys)})")
+    print(f"\nВсего в базе свежих ключей: {len(all_keys)} (Global: {len(global_keys)}, Whitelist: {len(wl_keys)})")
 
     regular_ready, whitelist_ready = filter_and_rank_keys(all_keys)
 
