@@ -6,7 +6,7 @@ import socket
 import time
 import tempfile
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse, parse_qs
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,30 +23,21 @@ MAX_STRICT_LATENCY_MS = 500.0   # СТРОГИЙ максимум: всё что
 RECOMMENDED_LATENCY_MS = 120.0  # Эталонная задержка (наивысший приоритет)
 
 # =====================================================================
-# 1. ЗАПРЕЩЕННЫЕ SNI И ХОСТИНГИ В РФ (ТСПУ / 406-ФЗ)
+# 1. ЗАПРЕЩЕННЫЕ SNI И ДАТА-ЦЕНТРЫ В РФ (ТСПУ / 406-ФЗ)
 # =====================================================================
 BLOCKED_SNI_IN_RU = (
-    # Заблокированные соцсети и мессенджеры
     "instagram", "cdninstagram", "facebook", "fbcdn", "twitter", "twimg",
     "x.com", "threads.net", "meta.com", "messenger.com", "discord",
     "discordapp", "discord.gg", "signal.org", "linkedin", "licdn",
-    "t.me", "telegram",
-    # Торренты и трекеры
-    "rutracker", "rutor", "kinozal", "flibusta", "nnmclub",
-    # Заблокированные СМИ
+    "t.me", "telegram", "rutracker", "rutor", "kinozal", "flibusta",
     "meduza", "bbc.com", "bbc.co.uk", "dw.com", "svoboda", "rferl",
-    "theins", "zona.media", "navalny", "novayagazeta", "doxa", "currenttime",
-    # Инструменты обхода и форумы
-    "torproject", "ntc.party",
-    # Adult ресурсы
-    "pornhub", "xvideos", "xnxx", "bongacams"
+    "theins", "zona.media", "navalny", "novayagazeta", "torproject",
+    "pornhub", "xvideos", "xnxx"
 )
 
-BANNED_ASN_KEYWORDS = (
-    "hetzner", "ovh", "digitalocean", "linode", "akamai", "vultr",
-    "choopa", "constant company", "scaleway", "oracle", "amazon",
-    "aws", "azure", "microsoft", "google", "cloudflare", "fastly",
-    "mci.ir", "irancell", "arvancloud", "leaseweb"
+BANNED_HOST_DOMAINS = (
+    "hetzner", "ovh", "digitalocean", "linode", "vultr", "scaleway",
+    "oracle", "amazon", "aws", "azure", "mci.ir", "irancell", "arvancloud"
 )
 
 BANNED_HOSTING_CIDRS = [
@@ -55,6 +46,7 @@ BANNED_HOSTING_CIDRS = [
     "135.181.0.0/16", "138.201.0.0/16", "142.132.0.0/16", "144.76.0.0/16",
     "159.69.0.0/16", "168.119.0.0/16", "195.201.0.0/16", "65.108.0.0/16",
     "65.109.0.0/16", "49.12.0.0/16", "116.202.0.0/16", "116.203.0.0/16",
+    "213.133.96.0/19", "213.239.192.0/18",
     # DigitalOcean
     "104.131.0.0/16", "104.248.0.0/16", "138.68.0.0/16", "142.93.0.0/16",
     "143.198.0.0/16", "143.244.0.0/16", "157.230.0.0/16", "157.245.0.0/16",
@@ -65,7 +57,12 @@ BANNED_HOSTING_CIDRS = [
     # OVH
     "51.0.0.0/8", "141.94.0.0/15", "146.59.0.0/16", "135.125.0.0/16",
     "178.32.0.0/15", "188.165.0.0/16", "193.70.0.0/16", "37.59.0.0/16",
-    "46.105.0.0/16", "54.36.0.0/15", "57.128.0.0/16",
+    "46.105.0.0/16", "54.36.0.0/15", "57.128.0.0/16", "91.121.0.0/16",
+    "94.23.0.0/16", "147.135.0.0/16", "151.80.0.0/16", "164.132.0.0/16",
+    # Vultr / Choopa
+    "45.32.0.0/16", "45.63.0.0/16", "45.76.0.0/16", "45.77.0.0/16",
+    "66.42.0.0/16", "108.61.0.0/16", "149.28.0.0/16", "207.148.0.0/16",
+    "208.167.240.0/21", "216.238.64.0/18",
     # Kamatera / Scaleway / Linode
     "185.10.68.0/22", "185.16.38.0/23", "213.142.128.0/18",
     "51.15.0.0/16", "163.172.0.0/16", "62.210.0.0/16", "139.162.0.0/16"
@@ -83,9 +80,7 @@ GLOBAL_SOURCES = [
     "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
     "https://raw.githubusercontent.com/LalatinaHub/Mineral/master/result/nodes",
     "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/vless",
-    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless",
-    "https://raw.githubusercontent.com/roosterkid/openproxylist/main/VLESS_RAW.txt",
-    "https://raw.githubusercontent.com/Leon406/SubCrawler/main/sub/share/vless"
+    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless"
 ]
 
 WHITELIST_SOURCES = [
@@ -100,8 +95,7 @@ WHITELIST_SOURCES = [
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus.txt",
     "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/whitelist.txt",
-    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/vless.txt"
+    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/whitelist.txt"
 ]
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
@@ -111,43 +105,37 @@ LOADED_BLOCKED_NETS = False
 GEO_CACHE = {}
 
 def extract_dates_from_text(text):
-    """Извлекает кортежи (год, месяц, день) из строки с фильтрацией версий софта"""
     dates = []
-    # YYYY-MM-DD или YYYY.MM.DD
     for m in re.finditer(r'\b(202\d)[-/.](0?[1-9]|1[0-2])[-/.](0?[1-9]|[12]\d|3[01])\b', text):
         dates.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
-    # DD.MM.YYYY или DD-MM-YYYY
     for m in re.finditer(r'\b(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])[-/.](202\d)\b', text):
         dates.append((int(m.group(3)), int(m.group(2)), int(m.group(1))))
-    # DD.MM или DD-MM или DD/MM (исключая v1.2 и IP)
     for m in re.finditer(r'(?<![vV\d])(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])(?![.\d])', text):
         dates.append((None, int(m.group(2)), int(m.group(1))))
     return dates
 
-def is_item_added_today(key_uri, is_source_today):
+def is_key_fresh(key_uri):
     """
-    Проверяет, добавлен ли ключ сегодня:
-    - Если в названии указана дата прошлых дней — отсеивает ключ.
-    - Если в названии дата сегодняшнего дня — подтверждает актуальность.
-    - Если даты в названии нет — сверяет актуальность самого источника.
+    Проверка актуальности даты ключа:
+    Если в названии ключа зашита дата прошлых дней — отсеиваем.
+    Ключи с сегодняшней датой или без даты допускаются к тестам.
     """
     now = datetime.now(timezone.utc)
+    yesterday = now - timedelta(days=1)
     fragment = urlparse(key_uri).fragment
     name = requests.utils.unquote(fragment) if fragment else ""
 
     dates = extract_dates_from_text(name)
     if dates:
         for y, m, d in dates:
-            if y is not None and y != now.year:
+            # Если указана дата прошлых дней (старше 24 часов) — отбрасываем
+            is_today = (y is None or y == now.year) and m == now.month and d == now.day
+            is_yesterday = (y is None or y == yesterday.year) and m == yesterday.month and d == yesterday.day
+            if not (is_today or is_yesterday):
                 return False
-            if m != now.month or d != now.day:
-                return False
-        return True
-
-    return is_source_today
+    return True
 
 def get_geo_info(host):
-    """Определение страны и флага по IP/домену"""
     try:
         ip = socket.gethostbyname(host)
     except Exception:
@@ -157,14 +145,14 @@ def get_geo_info(host):
         return GEO_CACHE[ip]["flag"], GEO_CACHE[ip]["country"]
 
     try:
-        r = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,countryCode", timeout=2.5)
+        r = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,countryCode", timeout=2.0)
         if r.status_code == 200:
             d = r.json()
             if d.get("status") == "success":
                 cc = d.get("countryCode", "").upper()
                 country = d.get("country", cc)
                 flag = "".join(chr(ord(c) + 127397) for c in cc) if len(cc) == 2 else "🌐"
-                GEO_CACHE[ip] = {"flag": flag, "country": country, "asn_info": ""}
+                GEO_CACHE[ip] = {"flag": flag, "country": country}
                 return flag, country
     except Exception:
         pass
@@ -172,7 +160,6 @@ def get_geo_info(host):
     return "🌐", "Unknown"
 
 def load_rkn_blocked_database():
-    """Локальная загрузка заблокированных подсетей РКН"""
     global LOADED_BLOCKED_NETS
     if LOADED_BLOCKED_NETS:
         return
@@ -185,7 +172,7 @@ def load_rkn_blocked_database():
 
     for url in sources:
         try:
-            r = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0"})
+            r = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
             if r.status_code == 200:
                 lines = r.text.splitlines()
                 valid_cidrs = [l.strip() for l in lines if "/" in l and not l.startswith("#")]
@@ -210,8 +197,12 @@ def load_rkn_blocked_database():
     LOADED_BLOCKED_NETS = True
 
 def is_ip_blocked_in_russia(host):
-    """Мгновенный локальный поиск IP по структуре заблокированных подсетей"""
+    """Локальная проверка IP по базе подсетей без обращения к внешним API"""
     try:
+        host_lower = host.lower()
+        if any(h in host_lower for h in BANNED_HOST_DOMAINS):
+            return True, host, "Banned Host Domain"
+
         ip_str = socket.gethostbyname(host)
         ip_obj = ipaddress.ip_address(ip_str)
         first_octet = int(ip_str.split('.')[0])
@@ -269,39 +260,19 @@ def fetch_group_keys(sources, is_whitelist_group):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     group_name = "Whitelist" if is_whitelist_group else "Global"
-    now = datetime.now(timezone.utc)
 
     for url in sources:
         try:
             resp = requests.get(url, headers=headers, timeout=10, verify=False)
             if resp.status_code == 200:
-                # 1. Проверяем свежесть источника
-                last_mod = resp.headers.get("Last-Modified", "")
-                expected_date = now.strftime("%d %b %Y")
-                is_source_today = expected_date in last_mod if last_mod else False
-
-                if not is_source_today:
-                    head_text = "\n".join(resp.text.splitlines()[:50])
-                    source_dates = extract_dates_from_text(head_text)
-                    if source_dates:
-                        for y, m, d in source_dates:
-                            if (y is None or y == now.year) and m == now.month and d == now.day:
-                                is_source_today = True
-                                break
-                    else:
-                        is_source_today = True
-
                 keys = extract_vless_keys(resp.text)
-                fresh_keys = [k for k in keys if is_item_added_today(k, is_source_today)]
-
+                fresh_keys = [k for k in keys if is_key_fresh(k)]
                 if fresh_keys:
-                    print(f"[{group_name}] {url} -> получено: {len(keys)} (актуальных на сегодня: {len(fresh_keys)})")
+                    print(f"[{group_name}] {url} -> получено: {len(keys)} (актуальных: {len(fresh_keys)})")
                     for k in fresh_keys:
                         if k not in seen:
                             seen.add(k)
                             items.append({"uri": k, "is_whitelist": is_whitelist_group})
-                else:
-                    print(f"[{group_name}] {url} -> пропущено: нет ключей за сегодняшний день")
             else:
                 print(f"[{group_name}] {url} -> код {resp.status_code}")
         except Exception as e:
@@ -327,12 +298,13 @@ def parse_vless(raw_item):
         sec = query.get("security", ["none"])[0].lower()
         pbk = query.get("pbk", [""])[0]
 
-        # СТРОГАЯ ФИЛЬТРАЦИЯ ЗАПРЕЩЕННЫХ SNI (ДЛЯ GLOBAL И WHITELIST)
+        # Строгий фильтр запрещенных SNI
         target_domains = [sni, host, parsed.hostname.lower()]
         for d in target_domains:
             if d and any(b in d for b in BLOCKED_SNI_IN_RU):
                 return None
 
+        # Для Global принимаем строго Reality или TLS с Vision
         if not is_whitelist:
             if sec not in ["reality", "tls"]:
                 return None
@@ -349,66 +321,6 @@ def parse_vless(raw_item):
         }
     except Exception:
         return None
-
-def resolve_single_host(it):
-    try:
-        ip = socket.gethostbyname(it["host"])
-        it["ip"] = ip
-        return it
-    except Exception:
-        return None
-
-def batch_enrich_and_filter(candidates, is_global=True, max_candidates=400):
-    """Параллельный DNS-резолв и пакетное определение хостинга/ASN"""
-    pool = candidates[:max_candidates]
-    resolved_candidates = []
-
-    with ThreadPoolExecutor(max_workers=35) as executor:
-        futures = [executor.submit(resolve_single_host, it) for it in pool]
-        for fut in as_completed(futures):
-            res = fut.result()
-            if res:
-                resolved_candidates.append(res)
-
-    unique_ips = list({it["ip"] for it in resolved_candidates if it.get("ip")})
-    missing_ips = [ip for ip in unique_ips if ip not in GEO_CACHE]
-
-    for i in range(0, len(missing_ips), 100):
-        chunk = missing_ips[i:i+100]
-        try:
-            payload = [{"query": ip, "fields": "query,status,country,countryCode,as,org,isp"} for ip in chunk]
-            r = requests.post("http://ip-api.com/batch", json=payload, timeout=6)
-            if r.status_code == 200:
-                for res in r.json():
-                    if res.get("status") == "success":
-                        q_ip = res.get("query")
-                        cc = res.get("countryCode", "").upper()
-                        country = res.get("country", cc)
-                        flag = "".join(chr(ord(c) + 127397) for c in cc) if len(cc) == 2 else "🌐"
-                        asn_info = (res.get("as", "") + " " + res.get("org", "") + " " + res.get("isp", "")).lower()
-                        GEO_CACHE[q_ip] = {
-                            "flag": flag,
-                            "country": country,
-                            "asn_info": asn_info
-                        }
-        except Exception as e:
-            print(f"[GeoBatch] Ошибка: {e}")
-
-    if not is_global:
-        return resolved_candidates
-
-    clean_candidates = []
-    blocked_count = 0
-    for it in resolved_candidates:
-        info = GEO_CACHE.get(it["ip"], {})
-        asn_str = info.get("asn_info", "")
-        if any(kw in asn_str for kw in BANNED_ASN_KEYWORDS):
-            blocked_count += 1
-            continue
-        clean_candidates.append(it)
-
-    print(f"[ASN-Фильтр] Отсеяно заблокированных в РФ дата-центров: {blocked_count}. Отобрано чистых хостов: {len(clean_candidates)}")
-    return clean_candidates
 
 def check_tcp_socket(item, timeout=1.8):
     start = time.perf_counter()
@@ -447,6 +359,7 @@ def convert_to_singbox_outbound(item, tag_name):
         "network": "tcp"
     }
 
+    # Flow xtls-rprx-vision допустим строго для TCP
     if flow in ["xtls-rprx-vision", "xtls-rprx-vision-udp443"] and net in ["tcp", ""] and sec in ["tls", "reality"]:
         outbound["flow"] = flow
 
@@ -487,7 +400,7 @@ def convert_to_singbox_outbound(item, tag_name):
     return outbound
 
 def test_vless_live(item, timeout=3.5):
-    """Живой замер трафика через sing-box с помощью curl"""
+    """Реальный замер задержки через sing-box с помощью curl"""
     if not os.path.exists("./sing-box"):
         return None
 
@@ -523,21 +436,21 @@ def test_vless_live(item, timeout=3.5):
             stderr=subprocess.DEVNULL
         )
 
+        # До 2.0 сек ожидания поднятия локального порта
         ready = False
-        for _ in range(25):
+        for _ in range(40):
             try:
-                with socket.create_connection(("127.0.0.1", test_port), timeout=0.04):
+                with socket.create_connection(("127.0.0.1", test_port), timeout=0.05):
                     ready = True
                     break
             except Exception:
-                time.sleep(0.04)
+                time.sleep(0.05)
 
         if not ready:
             return None
 
-        # Точки тестирования: Whitelist -> ya.ru/vk.com/cloudflare, Global -> gstatic/cloudflare
         if item["is_whitelist"]:
-            endpoints = ["https://ya.ru", "https://vk.com", "https://cp.cloudflare.com/generate_204"]
+            endpoints = ["https://cp.cloudflare.com/generate_204", "https://ya.ru", "https://vk.com"]
         else:
             endpoints = ["https://www.gstatic.com/generate_204", "https://cp.cloudflare.com/generate_204"]
 
@@ -581,11 +494,7 @@ def test_vless_live(item, timeout=3.5):
 
     return None
 
-def process_category(candidates, target_count=6, max_test=220):
-    """
-    Отбор серверов: пул живых проверок до 220 узлов.
-    Строгий лимит <= 500ms, эталонная сортировка по <= 120ms.
-    """
+def process_category(candidates, target_count=6, max_test=250):
     print(f"\nКандидатов на входе: {len(candidates)}")
     if not candidates:
         return []
@@ -600,8 +509,9 @@ def process_category(candidates, target_count=6, max_test=220):
 
     print(f"Уникальных адресов серверов: {len(unique_candidates)}")
 
+    # 1. Быстрый сокет-тест
     alive_socket = []
-    with ThreadPoolExecutor(max_workers=40) as executor:
+    with ThreadPoolExecutor(max_workers=35) as executor:
         futures = [executor.submit(check_tcp_socket, it) for it in unique_candidates]
         for fut in as_completed(futures):
             res = fut.result()
@@ -610,12 +520,13 @@ def process_category(candidates, target_count=6, max_test=220):
 
     print(f"Ответили на TCP-сокет (<=500ms): {len(alive_socket)} серверов.")
 
+    # 2. Глубокий тест (8 воркеров, предотвращает перегрузку CPU в GitHub Actions)
     pool = alive_socket[:max_test] if alive_socket else unique_candidates[:max_test]
     verified_live = []
 
     if os.path.exists("./sing-box") and pool:
         print(f"Запуск Real Delay теста (пул: {len(pool)}, цель: {target_count}, лимит <=500ms)...")
-        with ThreadPoolExecutor(max_workers=14) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             future_map = {executor.submit(test_vless_live, it): it for it in pool}
             for fut in as_completed(future_map):
                 try:
@@ -629,7 +540,8 @@ def process_category(candidates, target_count=6, max_test=220):
                             else:
                                 print(f" -> [✓ <=500ms] {res['host']}:{res['port']} | Задержка: {int(delay)} ms")
 
-                        if len(verified_live) >= target_count + 10:
+                        # Завершаем при достаточном запасе лучших узлов
+                        if len(verified_live) >= target_count + 12:
                             for f in future_map:
                                 f.cancel()
                             break
@@ -638,7 +550,7 @@ def process_category(candidates, target_count=6, max_test=220):
 
     verified_live.sort(key=lambda x: x.get("latency", 9999))
 
-    # Гарантированный добор серверов со строгим лимитом <= 500ms
+    # 3. Гарантированный добор серверов со строгим лимитом <= 500ms
     if len(verified_live) < target_count:
         print(f"Добор до нормы ({len(verified_live)}/{target_count}) из проверенных сокетов...")
         used_eps = {f"{x['host']}:{x['port']}" for x in verified_live}
@@ -675,17 +587,24 @@ def filter_and_rank_keys(raw_items):
 
     load_rkn_blocked_database()
 
-    print("\n--- ФИЛЬТРАЦИЯ И АНАЛИЗ ХОСТИНГОВ GLOBAL ---")
-    clean_global = batch_enrich_and_filter(reg_raw, is_global=True, max_candidates=400)
+    # Фильтрация запрещенных зарубежных дата-центров через локальную базу CIDR
+    clean_global = []
+    blocked_count = 0
+    for item in reg_raw:
+        is_blocked, ip, net = is_ip_blocked_in_russia(item["host"])
+        if is_blocked:
+            blocked_count += 1
+            continue
+        clean_global.append(item)
 
-    print("\n--- АНАЛИЗ ХОСТИНГОВ WHITELIST ---")
-    clean_whitelist = batch_enrich_and_filter(wl_raw, is_global=False, max_candidates=400)
+    print(f"[ASN/CIDR Фильтр] Отсеяно заблокированных хостингов: {blocked_count}. Чистых Global: {len(clean_global)}")
+    print(f"Кандидатов Whitelist: {len(wl_raw)}")
 
     print("\n--- ОБРАБОТКА ГРУППЫ GLOBAL ---")
-    regular_ready = process_category(clean_global, target_count=6, max_test=220)
+    regular_ready = process_category(clean_global, target_count=6, max_test=250)
 
     print("\n--- ОБРАБОТКА ГРУППЫ WHITELIST ---")
-    whitelist_ready = process_category(clean_whitelist, target_count=6, max_test=220)
+    whitelist_ready = process_category(wl_raw, target_count=6, max_test=250)
 
     print(f"\nИТОГ: Готовых живых Global: {len(regular_ready)}, Whitelist: {len(whitelist_ready)}")
     return regular_ready, whitelist_ready
@@ -711,9 +630,7 @@ def sanitize_vless_uri(uri, new_name):
 
 def format_node_name(item, sub_name, index, is_wl):
     tag_type = "Whitelist" if is_wl else "Global"
-    info = GEO_CACHE.get(item.get("ip", ""), {})
-    flag = info.get("flag", "🌐")
-    country = info.get("country", "VPN")
+    flag, country = get_geo_info(item["host"])
     hour_tag = time.strftime("%d.%m")
 
     node_name = f"{flag} {country} | {sub_name} | #{index:02d} [{tag_type}] ({hour_tag})"
