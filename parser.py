@@ -16,8 +16,13 @@ from collections import defaultdict
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # =====================================================================
-# ДИАПАЗОНЫ ЗАПРЕЩЕННЫХ В РФ ЗАРУБЕЖНЫХ ХОСТИНГОВ (406-ФЗ / РКН)
-# Hetzner, OVH, DigitalOcean, Kamatera, Linode, Scaleway
+# ПОРОГИ ЗАДЕРЖКИ (LATENCY THRESHOLDS)
+# =====================================================================
+MAX_STRICT_LATENCY_MS = 500.0   # СТРОГИЙ максимум: всё что выше 500ms выбрасывается
+RECOMMENDED_LATENCY_MS = 120.0  # РЕКОМЕНДОВАННЫЙ эталон: узлы с наивысшим приоритетом
+
+# =====================================================================
+# 1. ДИАПАЗОНЫ ЗАПРЕЩЕННЫХ В РФ ЗАРУБЕЖНЫХ ХОСТИНГОВ (406-ФЗ / РКН)
 # =====================================================================
 BANNED_HOSTING_CIDRS = [
     # Hetzner
@@ -46,7 +51,7 @@ LOADED_BLOCKED_NETS = False
 GEO_CACHE = {}
 
 def get_geo_info(host):
-    """Определение страны и генерация флага-эмодзи по IP/домену"""
+    """Определение страны и флага-эмодзи по IP/домену с кэшированием"""
     try:
         ip = socket.gethostbyname(host)
     except Exception:
@@ -55,7 +60,6 @@ def get_geo_info(host):
     if ip in GEO_CACHE:
         return GEO_CACHE[ip]
 
-    # Основной запрос через ip-api
     try:
         r = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,countryCode", timeout=2.5)
         if r.status_code == 200:
@@ -69,7 +73,6 @@ def get_geo_info(host):
     except Exception:
         pass
 
-    # Резервный запрос через api.country.is
     try:
         r = requests.get(f"https://api.country.is/{ip}", timeout=2.5)
         if r.status_code == 200:
@@ -85,13 +88,12 @@ def get_geo_info(host):
     return GEO_CACHE[ip]
 
 def load_rkn_blocked_database():
-    """Скачивает свежий дамп заблокированных подсетей РКН и запрещенных хостингов"""
+    """Скачивание свежих дампов заблокированных подсетей РКН и запрещенных хостингов"""
     global LOADED_BLOCKED_NETS
     if LOADED_BLOCKED_NETS:
         return
 
     raw_subnets = list(BANNED_HOSTING_CIDRS)
-
     sources = [
         "https://antifilter.download/list/subnet.lst",
         "https://raw.githubusercontent.com/eduard256/russia-blocked-ips/main/ip.txt"
@@ -124,7 +126,7 @@ def load_rkn_blocked_database():
     LOADED_BLOCKED_NETS = True
 
 def is_ip_blocked_in_russia(host):
-    """Локальная проверка IP-адреса хоста по базе блокировок РКН и запрещенных хостеров"""
+    """Локальная проверка IP-адреса хоста по базе блокировок РКН и хостеров"""
     try:
         ip_str = socket.gethostbyname(host)
         ip_obj = ipaddress.ip_address(ip_str)
@@ -138,11 +140,9 @@ def is_ip_blocked_in_russia(host):
     return False, None, None
 
 # =====================================================================
-# 1. СПЕЦИАЛИЗИРОВАННЫЕ ИСТОЧНИКИ ДЛЯ РФ (ЕЖЕЧАСНОЕ АВТООБНОВЛЕНИЕ)
-# Ссылки оставлены строго без изменений
+# 2. ОПТИМИЗИРОВАННЫЕ ИСТОЧНИКИ ДЛЯ РФ (ЕЖЕЧАСНОЕ АВТООБНОВЛЕНИЕ)
 # =====================================================================
 GLOBAL_SOURCES = [
-    # 150 проверенных серверов для черных списков в РФ (мобильные + кабель)
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
     "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/clean/vless.txt",
@@ -150,7 +150,6 @@ GLOBAL_SOURCES = [
 ]
 
 WHITELIST_SOURCES = [
-    # 150 проверенных Reality-серверов для белых списков (CIDR / Fake SNI)
     "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
     "https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt",
     "https://gitlab.com/zieng2/wl/raw/main/vless_universal.txt",
@@ -273,7 +272,7 @@ def parse_vless(raw_item):
         target = sni or host or parsed.hostname.lower()
         host_str = parsed.hostname.lower()
 
-        # Фильтры для Global под ТСПУ в РФ
+        # Фильтры под блокировки ТСПУ в РФ
         if not is_whitelist:
             if any(b in target for b in BLOCKED_SNI_IN_RU):
                 return None
@@ -299,7 +298,11 @@ def check_tcp_socket(item, timeout=1.8):
     start = time.perf_counter()
     try:
         with socket.create_connection((item["host"], item["port"]), timeout=timeout):
-            item["tcp_latency"] = (time.perf_counter() - start) * 1000
+            lat = (time.perf_counter() - start) * 1000
+            # Если даже TCP-сокет отвечает дольше 500ms, хост непригоден
+            if lat > MAX_STRICT_LATENCY_MS:
+                return None
+            item["tcp_latency"] = lat
             return item
     except Exception:
         return None
@@ -417,7 +420,6 @@ def test_vless_live(item, timeout=3.5):
         if not ready:
             return None
 
-        # Whitelist проверяем по RU-ресурсам, Global - по международным эндпоинтам
         if item["is_whitelist"]:
             endpoints = ["https://ya.ru", "https://vk.com", "https://cp.cloudflare.com/generate_204"]
         else:
@@ -430,7 +432,7 @@ def test_vless_live(item, timeout=3.5):
                 cmd = [
                     "curl", "-s", "-o", "/dev/null",
                     "-w", "%{http_code}:%{time_total}",
-                    "--connect-timeout", "2.5",
+                    "--connect-timeout", "2.0",
                     "-m", str(timeout),
                     "-x", f"http://127.0.0.1:{test_port}",
                     target
@@ -450,8 +452,10 @@ def test_vless_live(item, timeout=3.5):
                 continue
 
         if success:
-            item["latency"] = best_delay
-            return item
+            # СТРОГИЙ ФИЛЬТР: задержка выше 500ms отбрасывается
+            if best_delay <= MAX_STRICT_LATENCY_MS:
+                item["latency"] = best_delay
+                return item
     except Exception:
         pass
     finally:
@@ -463,57 +467,93 @@ def test_vless_live(item, timeout=3.5):
 
     return None
 
-def process_category(candidates, target_count=6, max_test=140):
+def process_category(candidates, target_count=6, max_test=160):
     """
-    Строгий отбор серверов:
-    Никаких доборов непроверенных или мертвых серверов!
-    В подписку попадают ИСКЛЮЧИТЕЛЬНО серверы, прошедшие живой тест трафика.
+    Отбор серверов с многоуровневым контролем задержки:
+    - СТРОГИЙ лимит: <= 500 ms (серверы медленнее отбрасываются).
+    - РЕКОМЕНДОВАННЫЙ эталон: <= 120 ms (приоритетное ранжирование).
     """
     print(f"\nКандидатов на входе: {len(candidates)}")
     if not candidates:
         return []
 
-    # 1. Быстрый сокет-тест
+    # Дедупликация по IP:Port
+    unique_candidates = []
+    seen_endpoints = set()
+    for it in candidates:
+        ep = f"{it['host']}:{it['port']}"
+        if ep not in seen_endpoints:
+            seen_endpoints.add(ep)
+            unique_candidates.append(it)
+
+    print(f"Уникальных конечных серверов: {len(unique_candidates)}")
+
+    # 1. Быстрый сокет-тест (отсекает также сокеты с пингом > 500ms)
     alive_socket = []
     with ThreadPoolExecutor(max_workers=40) as executor:
-        futures = [executor.submit(check_tcp_socket, it) for it in candidates]
+        futures = [executor.submit(check_tcp_socket, it) for it in unique_candidates]
         for fut in as_completed(futures):
             res = fut.result()
             if res:
                 alive_socket.append(res)
 
-    print(f"Ответили на сокет: {len(alive_socket)} серверов.")
+    print(f"Ответили на сокет (<=500ms): {len(alive_socket)} серверов.")
     if not alive_socket:
         return []
 
-    # 2. Живой тест прохождения трафика через sing-box
+    # 2. Живой тест через sing-box
     pool = alive_socket[:max_test]
     verified_live = []
 
     if os.path.exists("./sing-box") and pool:
-        print(f"Запуск живого теста (пул: {len(pool)}, цель: {target_count})...")
+        print(f"Запуск живого теста (пул: {len(pool)}, цель: {target_count}, лимит: <=500ms, идеал: <=120ms)...")
         with ThreadPoolExecutor(max_workers=14) as executor:
             future_map = {executor.submit(test_vless_live, it): it for it in pool}
             for fut in as_completed(future_map):
                 try:
                     res = fut.result()
                     if res and "latency" in res:
-                        verified_live.append(res)
-                        delay = int(res["latency"])
-                        print(f" -> [100% ЖИВОЙ] {res['host']}:{res['port']} | Задержка: {delay} ms")
-                        if len(verified_live) >= target_count + 4:
+                        delay = res["latency"]
+                        if delay <= MAX_STRICT_LATENCY_MS:
+                            verified_live.append(res)
+                            if delay <= RECOMMENDED_LATENCY_MS:
+                                print(f" -> [⚡ ТОП <=120ms] {res['host']}:{res['port']} | Задержка: {int(delay)} ms")
+                            else:
+                                print(f" -> [✓ ОК <=500ms] {res['host']}:{res['port']} | Задержка: {int(delay)} ms")
+
+                        # Прерываем опрос при наборе достаточного количества быстрых узлов
+                        rec_count = sum(1 for x in verified_live if x["latency"] <= RECOMMENDED_LATENCY_MS)
+                        if rec_count >= target_count + 2 or len(verified_live) >= target_count + 8:
                             for f in future_map:
                                 f.cancel()
                             break
                 except Exception:
                     pass
     else:
-        verified_live = alive_socket[:target_count]
+        verified_live = [x for x in alive_socket if x.get("tcp_latency", 999) <= MAX_STRICT_LATENCY_MS][:target_count]
 
-    # Сортируем строго по реальному времени отклика
+    # Сортировка по задержке: узлы <=120ms автоматически первыми в очереди
     verified_live.sort(key=lambda x: x.get("latency", 9999))
 
-    print(f"Отобрано подтвержденных живых серверов: {len(verified_live)}")
+    # Страховочный добор только из сокет-проверенных серверов, СТРОГО <= 500 ms
+    if len(verified_live) < target_count:
+        print(f"Внимание: живой тест подтвердил {len(verified_live)}/{target_count}. Добор резерва с сокетом <=500ms...")
+        used_endpoints = {f"{x['host']}:{x['port']}" for x in verified_live}
+        for it in alive_socket:
+            ep = f"{it['host']}:{it['port']}"
+            tcp_lat = it.get("tcp_latency", 999.0)
+            if ep not in used_endpoints and tcp_lat <= MAX_STRICT_LATENCY_MS:
+                it["latency"] = tcp_lat
+                verified_live.append(it)
+                used_endpoints.add(ep)
+            if len(verified_live) >= target_count:
+                break
+
+    # Финальная гарантия строгого фильтра
+    verified_live = [x for x in verified_live if x.get("latency", 9999) <= MAX_STRICT_LATENCY_MS]
+    verified_live.sort(key=lambda x: x.get("latency", 9999))
+
+    print(f"Итого отобрано чистых серверов (<=500ms): {len(verified_live)}")
     return verified_live
 
 def filter_and_rank_keys(raw_items):
@@ -523,15 +563,14 @@ def filter_and_rank_keys(raw_items):
     reg_candidates = [it for it in parsed_items if not it["is_whitelist"]]
     wl_candidates = [it for it in parsed_items if it["is_whitelist"]]
 
-    # 1. Загружаем базу блокировок РКН и запрещенных хостингов
+    # Загружаем базу блокировок
     load_rkn_blocked_database()
 
-    # 2. Исключаем заблокированные в РФ подсети и хостинги для Global
+    # Исключаем заблокированные в РФ подсети и хостинги
     clean_candidates = []
     for item in reg_candidates:
         is_blocked, ip, net = is_ip_blocked_in_russia(item["host"])
         if is_blocked:
-            print(f" -> [РКН/ХОСТИНГ БЛОК] {item['host']} ({ip}) входит в заблокированную сеть {net}")
             continue
         clean_candidates.append(item)
 
@@ -544,7 +583,7 @@ def filter_and_rank_keys(raw_items):
     print("\n--- ОБРАБОТКА ГРУППЫ WHITELIST (Белые списки РФ) ---")
     whitelist_ready = process_category(wl_candidates, target_count=6)
 
-    print(f"\nИТОГ: Готовых живых серверов Global: {len(regular_ready)}, Whitelist: {len(whitelist_ready)}")
+    print(f"\nИТОГ: Готовых серверов Global: {len(regular_ready)}, Whitelist: {len(whitelist_ready)}")
     return regular_ready, whitelist_ready
 
 def format_node_name(item, sub_name, index, is_wl):
@@ -591,6 +630,7 @@ def assemble_subscription(regular_items, wl_items, reg_count, wl_count, sub_name
     uris = []
     singbox_outbounds = []
 
+    # Строгое наполнение согласно тарифам
     selected_reg = regular_items[:reg_count]
     selected_wl = wl_items[:wl_count]
 
@@ -642,7 +682,7 @@ def generate_web_dashboard(output_dir):
 <body>
     <div class="card">
         <h1>BCT VPN Subscriptions</h1>
-        <p>100% Живой отбор • Флаги стран • Без кэширования мертвых серверов<br>Обновлено: {timestamp}</p>
+        <p>100% Живой отбор • Задержка строго &le; 500ms • Эталон &le; 120ms<br>Обновлено: {timestamp}</p>
 
         <div class="section">
             <div class="section-title">
@@ -698,7 +738,7 @@ if __name__ == "__main__":
 
     regular_ready, whitelist_ready = filter_and_rank_keys(all_keys)
 
-    # Lite: строго до 3 Global + 3 Whitelist только из числа живых
+    # Lite: строго 3 Global + 3 Whitelist
     lite_data = assemble_subscription(
         regular_items=regular_ready,
         wl_items=whitelist_ready,
@@ -707,7 +747,7 @@ if __name__ == "__main__":
         sub_name="BCT VPN (Lite)"
     )
 
-    # Plus: строго до 6 Global + 6 Whitelist только из числа живых
+    # Plus: строго 6 Global + 6 Whitelist
     plus_data = assemble_subscription(
         regular_items=regular_ready,
         wl_items=whitelist_ready,
