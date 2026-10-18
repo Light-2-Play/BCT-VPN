@@ -69,33 +69,53 @@ BANNED_HOSTING_CIDRS = [
 ]
 
 # =====================================================================
-# 2. ИСТОЧНИКИ ДЛЯ КАТЕГОРИЙ GLOBAL И WHITELIST
+# 2. РАСШИРЕННЫЕ ИСТОЧНИКИ ДЛЯ КАТЕГОРИИ GLOBAL
 # =====================================================================
 GLOBAL_SOURCES = [
+    # Профильные базы под РФ (мобильные + стационарные провайдеры)
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt",
     "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/BLACK_VLESS_RUS_mobile.txt",
     "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/BLACK_VLESS_RUS.txt",
+    # Крупные базы VLESS (подлежат фильтрации по ТСПУ/ASN)
     "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/vless.txt",
     "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
     "https://raw.githubusercontent.com/LalatinaHub/Mineral/master/result/nodes",
     "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/vless",
-    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless"
+    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/vless",
+    "https://raw.githubusercontent.com/roosterkid/openproxylist/main/VLESS_RAW.txt",
+    "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/splitted/vless.txt",
+    "https://raw.githubusercontent.com/Leon406/SubCrawler/main/sub/share/vless",
+    "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub",
+    "https://raw.githubusercontent.com/MrPooyaX/Vplayerconfigs/main/Splited_By_Protocol/vless.txt",
+    "https://raw.githubusercontent.com/peasoft/NoMore-Garbage/master/vless.txt",
+    "https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/vless",
+    "https://raw.githubusercontent.com/ts-sf/fly/main/vless"
 ]
 
+# =====================================================================
+# 3. РАСШИРЕННЫЕ ИСТОЧНИКИ ДЛЯ КАТЕГОРИИ WHITELIST
+# =====================================================================
 WHITELIST_SOURCES = [
+    # zieng2/wl: ветки master и main на GitHub
     "https://raw.githubusercontent.com/zieng2/wl/master/vless_universal.txt",
     "https://raw.githubusercontent.com/zieng2/wl/master/vless_lite.txt",
     "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
     "https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt",
+    # zieng2/wl: зеркала на GitLab
     "https://gitlab.com/zieng2/wl/raw/main/vless_universal.txt",
     "https://gitlab.com/zieng2/wl/raw/main/vless_lite.txt",
+    # zieng2/wl: зеркала на Codeberg
     "https://codeberg.org/zieng2/wl/raw/branch/main/vless_universal.txt",
     "https://codeberg.org/zieng2/wl/raw/branch/main/vless_lite.txt",
+    # igareck: белые списки для РФ (GitHub + зеркала GitLab)
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus.txt",
     "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/whitelist.txt"
+    "https://gitlab.com/igareck/vpn-configs-for-russia/-/raw/main/Vless-Reality-White-Lists-Rus.txt",
+    # kort0881: белые списки
+    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/whitelist.txt",
+    "https://raw.githubusercontent.com/kort0881/russia-whitelist/main/vless.txt"
 ]
 
 VLESS_REGEX = re.compile(r"vless://[^\s<>\"']+")
@@ -128,7 +148,6 @@ def is_key_fresh(key_uri):
     dates = extract_dates_from_text(name)
     if dates:
         for y, m, d in dates:
-            # Если указана дата прошлых дней (старше 24 часов) — отбрасываем
             is_today = (y is None or y == now.year) and m == now.month and d == now.day
             is_yesterday = (y is None or y == yesterday.year) and m == yesterday.month and d == yesterday.day
             if not (is_today or is_yesterday):
@@ -268,7 +287,7 @@ def fetch_group_keys(sources, is_whitelist_group):
                 keys = extract_vless_keys(resp.text)
                 fresh_keys = [k for k in keys if is_key_fresh(k)]
                 if fresh_keys:
-                    print(f"[{group_name}] {url} -> получено: {len(keys)} (актуальных: {len(fresh_keys)})")
+                    print(f"[{group_name}] {url} -> найдено: {len(keys)} (актуальных: {len(fresh_keys)})")
                     for k in fresh_keys:
                         if k not in seen:
                             seen.add(k)
@@ -298,7 +317,7 @@ def parse_vless(raw_item):
         sec = query.get("security", ["none"])[0].lower()
         pbk = query.get("pbk", [""])[0]
 
-        # Строгий фильтр запрещенных SNI
+        # Фильтр запрещённых SNI
         target_domains = [sni, host, parsed.hostname.lower()]
         for d in target_domains:
             if d and any(b in d for b in BLOCKED_SNI_IN_RU):
@@ -359,7 +378,6 @@ def convert_to_singbox_outbound(item, tag_name):
         "network": "tcp"
     }
 
-    # Flow xtls-rprx-vision допустим строго для TCP
     if flow in ["xtls-rprx-vision", "xtls-rprx-vision-udp443"] and net in ["tcp", ""] and sec in ["tls", "reality"]:
         outbound["flow"] = flow
 
@@ -436,7 +454,6 @@ def test_vless_live(item, timeout=3.5):
             stderr=subprocess.DEVNULL
         )
 
-        # До 2.0 сек ожидания поднятия локального порта
         ready = False
         for _ in range(40):
             try:
@@ -520,7 +537,7 @@ def process_category(candidates, target_count=6, max_test=250):
 
     print(f"Ответили на TCP-сокет (<=500ms): {len(alive_socket)} серверов.")
 
-    # 2. Глубокий тест (8 воркеров, предотвращает перегрузку CPU в GitHub Actions)
+    # 2. Глубокий тест (8 воркеров для стабильной нагрузки)
     pool = alive_socket[:max_test] if alive_socket else unique_candidates[:max_test]
     verified_live = []
 
@@ -540,7 +557,6 @@ def process_category(candidates, target_count=6, max_test=250):
                             else:
                                 print(f" -> [✓ <=500ms] {res['host']}:{res['port']} | Задержка: {int(delay)} ms")
 
-                        # Завершаем при достаточном запасе лучших узлов
                         if len(verified_live) >= target_count + 12:
                             for f in future_map:
                                 f.cancel()
@@ -587,7 +603,7 @@ def filter_and_rank_keys(raw_items):
 
     load_rkn_blocked_database()
 
-    # Фильтрация запрещенных зарубежных дата-центров через локальную базу CIDR
+    # Фильтрация запрещённых дата-центров через локальную базу CIDR
     clean_global = []
     blocked_count = 0
     for item in reg_raw:
@@ -776,7 +792,7 @@ if __name__ == "__main__":
 
     regular_ready, whitelist_ready = filter_and_rank_keys(all_keys)
 
-    # Lite: строго 3 Global + 3 Whitelist
+    # Lite: ровно 3 Global + 3 Whitelist
     lite_data = assemble_subscription(
         regular_items=regular_ready,
         wl_items=whitelist_ready,
@@ -785,7 +801,7 @@ if __name__ == "__main__":
         sub_name="BCT VPN (Lite)"
     )
 
-    # Plus: строго 6 Global + 6 Whitelist
+    # Plus: ровно 6 Global + 6 Whitelist
     plus_data = assemble_subscription(
         regular_items=regular_ready,
         wl_items=whitelist_ready,
