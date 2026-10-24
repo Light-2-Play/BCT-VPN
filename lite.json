@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "remarks": "BCT VPN (Lite) [24.10 07:09 UTC]",
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Auto / Select (BCT VPN (Lite))",
+      "outbounds": [
+        "urltest",
+        "🇨🇦 Canada | BCT VPN (Lite) | #01 [Global] (24.10)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Global] (24.10)",
+        "🇳🇱 The Netherlands | BCT VPN (Lite) | #03 [Global] (24.10)",
+        "🇷🇺 Russia | BCT VPN (Lite) | #01 [Whitelist] (24.10)",
+        "🇷🇺 Russia | BCT VPN (Lite) | #02 [Whitelist] (24.10)",
+        "🇷🇺 Russia | BCT VPN (Lite) | #03 [Whitelist] (24.10)"
+      ],
+      "default": "urltest"
+    },
+    {
+      "type": "urltest",
+      "tag": "urltest",
+      "outbounds": [
+        "🇨🇦 Canada | BCT VPN (Lite) | #01 [Global] (24.10)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Global] (24.10)",
+        "🇳🇱 The Netherlands | BCT VPN (Lite) | #03 [Global] (24.10)",
+        "🇷🇺 Russia | BCT VPN (Lite) | #01 [Whitelist] (24.10)",
+        "🇷🇺 Russia | BCT VPN (Lite) | #02 [Whitelist] (24.10)",
+        "🇷🇺 Russia | BCT VPN (Lite) | #03 [Whitelist] (24.10)"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "3m",
+      "tolerance": 50
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "vless",
+      "tag": "🇨🇦 Canada | BCT VPN (Lite) | #01 [Global] (24.10)",
+      "server": "172.66.0.162",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #02 [Global] (24.10)",
+      "server": "15.204.97.206",
+      "server_port": 23576,
+      "uuid": "48ff2b70-e180-582f-8866-d9a2edeed5f5",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "fuck.rkn",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s",
+          "short_id": "01"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇳🇱 The Netherlands | BCT VPN (Lite) | #03 [Global] (24.10)",
+      "server": "188.164.248.216",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "android"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Lite) | #01 [Whitelist] (24.10)",
+      "server": "37.143.15.241",
+      "server_port": 443,
+      "uuid": "46785352-db89-4839-8079-d4c69ad87996",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "smartcaptcha.yandexcloud.net",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c_PXHuTBIY3fNMspNAr8YfGaaRcnNTk9MWq6qp-MuBQ"
+        }
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "grpc"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Lite) | #02 [Whitelist] (24.10)",
+      "server": "185.178.208.140",
+      "server_port": 443,
+      "uuid": "928a3079-7c20-40cc-9c92-e878ba959dcd",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "smart.werfad.online",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "edge"
+        },
+        "insecure": true
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Lite) | #03 [Whitelist] (24.10)",
+      "server": "193.160.140.104",
+      "server_port": 443,
+      "uuid": "8a1f8853-9a71-4ef2-a64c-4f0a94c2e14b",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "ai.ozon.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "android"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc"
+        }
+      }
+    }
+  ]
+}
