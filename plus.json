@@ -1,0 +1,319 @@
+{
+  "version": 1,
+  "remarks": "BCT VPN (Plus) [31.10 14:26 UTC]",
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Auto / Select (BCT VPN (Plus))",
+      "outbounds": [
+        "urltest",
+        "🇺🇸 United States | BCT VPN (Plus) | #01 [Global] (31.10)",
+        "🇳🇱 The Netherlands | BCT VPN (Plus) | #02 [Global] (31.10)",
+        "🇨🇦 Canada | BCT VPN (Plus) | #03 [Global] (31.10)",
+        "🇨🇦 Canada | BCT VPN (Plus) | #04 [Global] (31.10)",
+        "🇨🇦 Canada | BCT VPN (Plus) | #05 [Global] (31.10)",
+        "🇨🇦 Canada | BCT VPN (Plus) | #06 [Global] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #01 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #02 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #03 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #04 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #05 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #06 [Whitelist] (31.10)"
+      ],
+      "default": "urltest"
+    },
+    {
+      "type": "urltest",
+      "tag": "urltest",
+      "outbounds": [
+        "🇺🇸 United States | BCT VPN (Plus) | #01 [Global] (31.10)",
+        "🇳🇱 The Netherlands | BCT VPN (Plus) | #02 [Global] (31.10)",
+        "🇨🇦 Canada | BCT VPN (Plus) | #03 [Global] (31.10)",
+        "🇨🇦 Canada | BCT VPN (Plus) | #04 [Global] (31.10)",
+        "🇨🇦 Canada | BCT VPN (Plus) | #05 [Global] (31.10)",
+        "🇨🇦 Canada | BCT VPN (Plus) | #06 [Global] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #01 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #02 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #03 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #04 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #05 [Whitelist] (31.10)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #06 [Whitelist] (31.10)"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "3m",
+      "tolerance": 50
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Plus) | #01 [Global] (31.10)",
+      "server": "31.172.69.31",
+      "server_port": 8443,
+      "uuid": "9c6e83fc-b755-4ad4-9b0a-14b610153d8f",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.samsung.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "H43_itYl9CE0AJiCktUfriENFmixY_MTHgX8slCrN2Q",
+          "short_id": "a4e32c324d86cfdf"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇳🇱 The Netherlands | BCT VPN (Plus) | #02 [Global] (31.10)",
+      "server": "188.164.248.216",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "ios"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇨🇦 Canada | BCT VPN (Plus) | #03 [Global] (31.10)",
+      "server": "172.66.0.162",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇨🇦 Canada | BCT VPN (Plus) | #04 [Global] (31.10)",
+      "server": "cf.877774.xyz",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/?TELEGRAM--B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub--TELEGRAM",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇨🇦 Canada | BCT VPN (Plus) | #05 [Global] (31.10)",
+      "server": "104.17.154.123",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/?TELEGRAM--B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub--TELEGRAM",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇨🇦 Canada | BCT VPN (Plus) | #06 [Global] (31.10)",
+      "server": "104.17.184.120",
+      "server_port": 443,
+      "uuid": "d342d11e-d224-4463-b982-532309285094",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ccc.010304.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/fp=chromefp=chrome",
+        "headers": {
+          "Host": "ccc.010304.xyz"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #01 [Whitelist] (31.10)",
+      "server": "185.178.208.140",
+      "server_port": 443,
+      "uuid": "ea277838-a188-44f1-a2e8-94aa110c4f27",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "static.bakarova-top.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "insecure": true
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #02 [Whitelist] (31.10)",
+      "server": "189.74.106.115",
+      "server_port": 443,
+      "uuid": "9ad899f2-b00b-4cd9-a1f8-72c59e216f19",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "api.setevoypriliv.cc",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs",
+          "short_id": "a8"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #03 [Whitelist] (31.10)",
+      "server": "185.229.9.135",
+      "server_port": 443,
+      "uuid": "8f763a7f-4cda-4db1-90e3-9aeae0860dc0",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "business.lesotorg-kirov.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "safari"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/chws",
+        "headers": {
+          "Host": "business.lesotorg-kirov.ru"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #04 [Whitelist] (31.10)",
+      "server": "185.86.145.37",
+      "server_port": 443,
+      "uuid": "e37ebf3b-ac32-48a8-8f56-d113967eaf29",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "ara.rtkdvbr.cc",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/amws",
+        "headers": {
+          "Host": "ara.rtkdvbr.cc"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #05 [Whitelist] (31.10)",
+      "server": "200.169.184.168",
+      "server_port": 443,
+      "uuid": "6036c28a-8db2-432e-8118-ff0c16641ad0",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "tm6.24convertflow.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "2IylNqpuTBeUvd333tXWY6i0l8nkH6o5qfRVKZm6FA0",
+          "short_id": "e0aadc6f38ff06a8"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #06 [Whitelist] (31.10)",
+      "server": "87.242.119.253",
+      "server_port": 443,
+      "uuid": "aba9cdd4-026c-0001-87a9-9b3e5f24dd82",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "hvtlr-ru-47sb.fade.mom",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "qq"
+        },
+        "insecure": true
+      }
+    }
+  ]
+}
