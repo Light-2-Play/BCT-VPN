@@ -1,0 +1,310 @@
+{
+  "version": 1,
+  "remarks": "BCT VPN (Plus) [07.11 15:33 UTC]",
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Auto / Select (BCT VPN (Plus))",
+      "outbounds": [
+        "urltest",
+        "🇺🇸 United States | BCT VPN (Plus) | #01 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #02 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #03 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #04 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #05 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #06 [Global] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #01 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #02 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #03 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #04 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #05 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #06 [Whitelist] (07.11)"
+      ],
+      "default": "urltest"
+    },
+    {
+      "type": "urltest",
+      "tag": "urltest",
+      "outbounds": [
+        "🇺🇸 United States | BCT VPN (Plus) | #01 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #02 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #03 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #04 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #05 [Global] (07.11)",
+        "🇺🇸 United States | BCT VPN (Plus) | #06 [Global] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #01 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #02 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #03 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #04 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #05 [Whitelist] (07.11)",
+        "🇷🇺 Russia | BCT VPN (Plus) | #06 [Whitelist] (07.11)"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "3m",
+      "tolerance": 50
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Plus) | #01 [Global] (07.11)",
+      "server": "47.253.226.114",
+      "server_port": 443,
+      "uuid": "055a1ce8-2a16-4a0d-a2c2-22826c9b2413",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.cloudflare.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "Svl81isn16RPAFnjtmYw7A6TPnsEPLHuYYaJht65Rzc"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Plus) | #02 [Global] (07.11)",
+      "server": "169.40.42.231",
+      "server_port": 443,
+      "uuid": "d65cc14c-f53f-4fe2-b262-97856601319c",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "yahoo.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
+          "short_id": "c39cc7310a"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Plus) | #03 [Global] (07.11)",
+      "server": "15.204.97.216",
+      "server_port": 23576,
+      "uuid": "48ff2b70-e180-582f-8866-d9a2edeed5f5",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "fuck.rkn",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s",
+          "short_id": "01"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Plus) | #04 [Global] (07.11)",
+      "server": "15.204.97.209",
+      "server_port": 23576,
+      "uuid": "48ff2b70-e180-582f-8866-d9a2edeed5f5",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "fuck.rkn",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s",
+          "short_id": "01"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Plus) | #05 [Global] (07.11)",
+      "server": "15.204.97.219",
+      "server_port": 23576,
+      "uuid": "48ff2b70-e180-582f-8866-d9a2edeed5f5",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "fuck.rkn",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s",
+          "short_id": "01"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Plus) | #06 [Global] (07.11)",
+      "server": "15.204.97.195",
+      "server_port": 23576,
+      "uuid": "48ff2b70-e180-582f-8866-d9a2edeed5f5",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "fuck.rkn",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s",
+          "short_id": "01"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #01 [Whitelist] (07.11)",
+      "server": "95.129.236.239",
+      "server_port": 443,
+      "uuid": "b4c190fb-e77e-4aff-8545-6067ba70e54d",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "content-iv1k.login.opendns.stream",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/ws/events/961a89255e00",
+        "headers": {
+          "Host": "content-iv1k.login.opendns.stream"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #02 [Whitelist] (07.11)",
+      "server": "185.178.208.140",
+      "server_port": 443,
+      "uuid": "ea277838-a188-44f1-a2e8-94aa110c4f27",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "static.bakarova-top.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #03 [Whitelist] (07.11)",
+      "server": "95.129.236.149",
+      "server_port": 443,
+      "uuid": "183fa407-2280-4804-bcc0-e7deb29c808b",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "d.nehtar.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be",
+        "headers": {
+          "Host": "d.nehtar.ru"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #04 [Whitelist] (07.11)",
+      "server": "lorettmay.top",
+      "server_port": 443,
+      "uuid": "2232d904-8e6a-4202-8240-6efd8aec02e9",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "lorettmay.top",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/blog/posts",
+        "headers": {
+          "Host": "lorettmay.top"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #05 [Whitelist] (07.11)",
+      "server": "185.86.145.216",
+      "server_port": 32944,
+      "uuid": "183fa407-2280-4804-bcc0-e7deb29c808b",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "passport.yandex.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "Te3ZcFFTilb6_j4hdotSvXaRYBzGuNiRxuBh8n1NezU",
+          "short_id": "91d2d3db690f4b59"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Plus) | #06 [Whitelist] (07.11)",
+      "server": "168.113.128.70",
+      "server_port": 20105,
+      "uuid": "9aff658c-1f80-4c82-9213-48ca26996142",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "ripelever.net",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "edge"
+        },
+        "insecure": true
+      }
+    }
+  ]
+}
