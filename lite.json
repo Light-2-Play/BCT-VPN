@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "remarks": "BCT VPN (Lite) [14.11 15:41 UTC]",
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Auto / Select (BCT VPN (Lite))",
+      "outbounds": [
+        "urltest",
+        "🇺🇸 United States | BCT VPN (Lite) | #01 [Global] (14.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Global] (14.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #03 [Global] (14.11)",
+        "🇷🇺 Russia | BCT VPN (Lite) | #01 [Whitelist] (14.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Whitelist] (14.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #03 [Whitelist] (14.11)"
+      ],
+      "default": "urltest"
+    },
+    {
+      "type": "urltest",
+      "tag": "urltest",
+      "outbounds": [
+        "🇺🇸 United States | BCT VPN (Lite) | #01 [Global] (14.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Global] (14.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #03 [Global] (14.11)",
+        "🇷🇺 Russia | BCT VPN (Lite) | #01 [Whitelist] (14.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Whitelist] (14.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #03 [Whitelist] (14.11)"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "3m",
+      "tolerance": 50
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #01 [Global] (14.11)",
+      "server": "47.253.226.114",
+      "server_port": 443,
+      "uuid": "055a1ce8-2a16-4a0d-a2c2-22826c9b2413",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.cloudflare.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "Svl81isn16RPAFnjtmYw7A6TPnsEPLHuYYaJht65Rzc"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #02 [Global] (14.11)",
+      "server": "169.40.42.163",
+      "server_port": 443,
+      "uuid": "d65cc14c-f53f-4fe2-b262-97856601319c",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "yahoo.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
+          "short_id": "c39cc7310a"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #03 [Global] (14.11)",
+      "server": "45.144.112.55",
+      "server_port": 443,
+      "uuid": "d65cc14c-f53f-4fe2-b262-97856601319c",
+      "network": "tcp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "yahoo.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
+          "short_id": "c39cc7310a"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇷🇺 Russia | BCT VPN (Lite) | #01 [Whitelist] (14.11)",
+      "server": "194.55.239.111",
+      "server_port": 443,
+      "uuid": "3ecbd833-40d8-4ddb-b80b-a7c4628ec7e5",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "d4cdn13.cloud-cdn.xyz",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "vlgrpc"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #02 [Whitelist] (14.11)",
+      "server": "47.253.226.114",
+      "server_port": 443,
+      "uuid": "055a1ce8-2a16-4a0d-a2c2-22826c9b2413",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.cloudflare.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "Svl81isn16RPAFnjtmYw7A6TPnsEPLHuYYaJht65Rzc"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #03 [Whitelist] (14.11)",
+      "server": "167.17.69.171",
+      "server_port": 443,
+      "uuid": "00144519-7e0d-476b-8d28-435576af9262",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.cloudflare.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "ALT8hIGeZEhi0sQFbXP_ntBg8Xo-v7i0YCLrqTnBxRk",
+          "short_id": "0990d22f"
+        }
+      }
+    }
+  ]
+}
