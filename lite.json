@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "remarks": "BCT VPN (Lite) [28.11 15:04 UTC]",
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Auto / Select (BCT VPN (Lite))",
+      "outbounds": [
+        "urltest",
+        "🇨🇦 Canada | BCT VPN (Lite) | #01 [Global] (28.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Global] (28.11)",
+        "🇨🇦 Canada | BCT VPN (Lite) | #03 [Global] (28.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #01 [Whitelist] (28.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Whitelist] (28.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #03 [Whitelist] (28.11)"
+      ],
+      "default": "urltest"
+    },
+    {
+      "type": "urltest",
+      "tag": "urltest",
+      "outbounds": [
+        "🇨🇦 Canada | BCT VPN (Lite) | #01 [Global] (28.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Global] (28.11)",
+        "🇨🇦 Canada | BCT VPN (Lite) | #03 [Global] (28.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #01 [Whitelist] (28.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #02 [Whitelist] (28.11)",
+        "🇺🇸 United States | BCT VPN (Lite) | #03 [Whitelist] (28.11)"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "3m",
+      "tolerance": 50
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "vless",
+      "tag": "🇨🇦 Canada | BCT VPN (Lite) | #01 [Global] (28.11)",
+      "server": "104.24.196.20",
+      "server_port": 443,
+      "uuid": "53bbdad4-2f4e-45db-8df4-fa491a6a7227",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "freeceshi6.frii.site",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/?Telegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET",
+        "headers": {
+          "Host": "freeceshi6.frii.site"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #02 [Global] (28.11)",
+      "server": "8.6.112.86",
+      "server_port": 443,
+      "uuid": "53bbdad4-2f4e-45db-8df4-fa491a6a7227",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "freeceshi6.frii.site",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/?Telegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET",
+        "headers": {
+          "Host": "freeceshi6.frii.site"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇨🇦 Canada | BCT VPN (Lite) | #03 [Global] (28.11)",
+      "server": "104.18.32.47",
+      "server_port": 443,
+      "uuid": "53bbdad4-2f4e-45db-8df4-fa491a6a7227",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "freeceshi6.frii.site",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "insecure": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/?Telegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET",
+        "headers": {
+          "Host": "freeceshi6.frii.site"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #01 [Whitelist] (28.11)",
+      "server": "15.204.97.198",
+      "server_port": 23576,
+      "uuid": "48ff2b70-e180-582f-8866-d9a2edeed5f5",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "fuck.rkn",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s",
+          "short_id": "01"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #02 [Whitelist] (28.11)",
+      "server": "15.204.97.214",
+      "server_port": 23576,
+      "uuid": "48ff2b70-e180-582f-8866-d9a2edeed5f5",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "fuck.rkn",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s",
+          "short_id": "01"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "🇺🇸 United States | BCT VPN (Lite) | #03 [Whitelist] (28.11)",
+      "server": "15.204.97.197",
+      "server_port": 23576,
+      "uuid": "48ff2b70-e180-582f-8866-d9a2edeed5f5",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "fuck.rkn",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "firefox"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s",
+          "short_id": "01"
+        }
+      }
+    }
+  ]
+}
